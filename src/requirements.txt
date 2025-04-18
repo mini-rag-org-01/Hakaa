@@ -8,7 +8,7 @@ langchain==0.1.20
 PyMuPDF==1.24.3
 motor==3.4.0
 pydantic-mongo==2.3.0
-openai==1.66.3
+openai==1.75.0
 cohere==5.5.8
 qdrant-client==1.10.1
 SQLAlchemy==2.0.36
@@ -17,3 +17,8 @@ alembic==1.14.0
 psycopg2==2.9.10
 pgvector==0.4.0
 nltk==3.9.1
+
+# Monitoring and metrics
+prometheus-client==0.21.1
+starlette-exporter==0.23.0
+fastapi-health==0.4.0
