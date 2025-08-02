@@ -22,17 +22,3 @@ async def welcome(app_settings: Settings = Depends(get_settings)):
         "app_name": app_name,
         "app_version": app_version,
     }
-
-@base_router.get("/send_reports")
-async def send_reports(app_settings: Settings = Depends(get_settings)):
-
-    # ==== START ==== send reports
-    task = send_email_reports.delay(
-        mail_wait_seconds=3
-    )
-    # ==== END ==== send reports
-
-    return {
-        "success": True,
-        "task_id": task.id
-    }
