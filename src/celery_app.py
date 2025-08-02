@@ -14,6 +14,9 @@ celery_app = Celery(
     "minirag",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
+    include=[
+        "tasks.mail_service"
+    ]
 )
 
 # Configure Celery with essential settings
