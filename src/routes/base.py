@@ -3,7 +3,6 @@ import os
 from helpers.config import get_settings, Settings
 from time import sleep
 import logging
-from tasks.mail_service import send_email_reports
 
 logger = logging.getLogger('uvicorn.error')
 
