@@ -113,8 +113,7 @@ $ uvicorn main:app --reload --host 0.0.0.0 --port 5000
 To Run the Celery worker, you need to run the following command in a separate terminal:
 
 ```bash
-$ python -m celery -A celery_app worker --queues=default,file_processing
---loglevel=info
+$ python -m celery -A celery_app worker --queues=default,file_processing --loglevel=info
 ```
 
 To Run **Flower Dashboard**, you can run the following command in a separate terminal:
