@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
                 )
 def index_data_content(self, project_id: int, do_reset: int):
 
+    logger.warning("index_data_content started")
     return asyncio.run(
         _index_data_content(self, project_id, do_reset)
     )
