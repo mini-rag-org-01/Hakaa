@@ -29,3 +29,4 @@ redis==6.2.0
 kombu==5.5.4
 billiard==4.2.1
 vine==5.1.0
+flower==2.0.1
