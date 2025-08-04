@@ -38,3 +38,12 @@ VECTOR_DB_PGVEC_INDEX_THRESHOLD = 100
 # ========================= Template Config =========================
 PRIMARY_LANG = "en"
 DEFAULT_LANG = "en"
+
+# ========================= Celery Task Queue Config =========================
+CELERY_BROKER_URL="amqp://minirag_user:minirag_rabbitmq_2222@localhost:5672/minirag_vhost"
+CELERY_RESULT_BACKEND="redis://:minirag_redis_2222@localhost:6379/0"
+CELERY_TASK_SERIALIZER="json"
+CELERY_TASK_TIME_LIMIT=600
+CELERY_TASK_ACKS_LATE=false
+CELERY_WORKER_CONCURRENCY=2
+CELERY_FLOWER_PASSWORD="minirag_flower_2222"
