@@ -29,6 +29,12 @@ This is an educational project where all of the codes where explained (step by s
 | 19 | Ollama Local LLM Server                       | [Video](https://youtu.be/-epZ1hAAtrs) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-012) |
 | 20 | From Mongo to Postgres + SQLAlchemy & Alembic                       | [Video](https://www.youtube.com/watch?v=BVOq7Ek2Up0) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-013) |
 | 21 | The way to PgVector                       | [Video](https://www.youtube.com/watch?v=g99yq5zlYAE) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-014) |
+| 22 | App Deployments 1/2                       | [Video](https://www.youtube.com/watch?v=7QRPnAbVssg) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-015) |
+| 22 | App Deployments 2/2                       | [Video](https://www.youtube.com/watch?v=qJ5Hdyc4hDc) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-015) |
+| 24 | Celery Workers 1/2                       | [Video](https://www.youtube.com/watch?v=pX-iWWT2TJo) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-016) |
+| 25 | Celery Workers 2/2                       | [Video](https://www.youtube.com/watch?v=SZ5Aznjf8Kc) | [branch](https://github.com/bakrianoo/mini-rag/tree/tut-017) |
+
+
 
 
 ## Requirements
