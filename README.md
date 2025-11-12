@@ -1,7 +1,11 @@
 
 ## Requirements
 
-- Python 3.10
+- fastapi 0.121.1
+- uvicorn 0.38.0
+- python-multipart 0.0.20
+- python-dotenv 1.2.1
+- pydantic-settings 2.12.0
 
 #### Install Dependencies
 
