@@ -7,7 +7,7 @@ BaseRouter = APIRouter(
 )
 
 @BaseRouter.get("/")
-async def welcome(): 
+async def welcome(app_settings = Depends(get_settings)): 
      
     app_settings = get_settings()
     app_name = app_settings.APP_NAME
