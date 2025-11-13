@@ -1,0 +1,14 @@
+Error1:
+
+file_path = os.path.join = (
+    project_dir_path,
+    file.filename
+)
+ =>convert file_path to tuple 
+TypeError: expected str, bytes or os.PathLike object, not tuple
+
+sol1: 
+file_path = os.path.join(
+    project_dir_path,
+    file.filename
+)
