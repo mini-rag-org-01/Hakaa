@@ -36,3 +36,21 @@ def get_file_loader(self,file_id:str):
 def git_file_content(self, file_id: str):
     loader = self.get_file_loader(file_id=file_id)
     return loader.load()
+
+def process_file_content(self, file_content: list, file_id:str,
+                         chunk_size: int = 100 , overlap_size: int=20):
+    file_content_texts = {
+        rec.page_content
+        for rec in file_content
+    }
+    file_content_metadata = {
+        rec.metadata
+        for rec in file_content
+    }
+
+    chunks = text_splitter.create_documents(
+        file_content_texts,
+        metadatas = file_content_metadata
+    )
+
+    return chunks
