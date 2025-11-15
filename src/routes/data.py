@@ -6,6 +6,7 @@ import aiofiles
 from helpers.config import get_settings, Settings
 from controllers import DataController, ProjectController
 import logging
+from .schemes.data import ProcessRequest
 
 
 logger = logging.getLogger('uvicorn.error')
@@ -26,7 +27,8 @@ async def upload_data(project_id: str,file : UploadFile,
         return JSONResponse(
             status_code= status.HTTP_400_BAD_REQUEST,
             content= {
-                "signal": result_signal.value
+                "signal": result_signal.value,
+                 "file_id" : file_id
             }
         )
     # access to file 
@@ -48,13 +50,24 @@ async def upload_data(project_id: str,file : UploadFile,
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "signal": ResponseSignal.FILE_UPLOAD_FAILED.value
+                "signal": ResponseSignal.FILE_UPLOAD_FAILED.value,
+                "file_id" : file_id
+
             }
         )
 
 
     return JSONResponse(
             content= {
-                "signal": ResponseSignal.FILE_UPLOADED_SUCCESS.value
+                "signal": ResponseSignal.FILE_UPLOADED_SUCCESS.value,
+                "file_id" : file_id
+
             }
         )
+
+
+@data_router.post("/process/{project_id}")
+async def process_endpoint(project_id:str, process_request : ProcessRequest ):
+    file_id = process_request.file_id
+    
+    return file_id
