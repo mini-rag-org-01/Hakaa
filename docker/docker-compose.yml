@@ -13,5 +13,7 @@ services:
     networks:
       - backend
 
+    restart : always
+
 networks:
   backend:
