@@ -11,7 +11,7 @@ class DataChunk(BaseModel):
    
     
     #skip any error
-    class config:
+    class Config:
         arbitrary_types_allowed = True
 
 
