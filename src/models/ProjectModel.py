@@ -8,29 +8,28 @@ class ProjectModel(BaseDataModel):
         self.collection= self.db_client[DataBaseEnum.COLLECTION_PROJECT_NAME.value]
             
     async def create_project(self, project : Project):
-
     # add collection to databasse (insert_one=> take dict)
     # await to wait to collect data 
         result = await self.collection.insert_one(project.dict())
-        project = result.inserted_id
+        project._id = result.inserted_id
 
         return project
 
 
     async def get_project_or_create_one(self, project_id: str):
 
-        record = await self.collection.find_one(
+        record = await self.collection.find_one(  # "find_one" => return dict
             {
                 "project_id" : project_id
             }
         )
         if record is None:
-            project = Project(project_id = project_id)
-            project = await self.create_project(project = project)
+            project = Project(project_id = project_id) # define project
+            project = await self.create_project(project = project) # create project
 
             return project
 
-        return Project(**record)  # 
+        return Project(**record)  # "record" is dict so we need to split each value at this dict to pass to "Project"
 
 
     async def get_all_projects(self, page: int=1, page_size: int=10):  #killer func
@@ -40,10 +39,12 @@ class ProjectModel(BaseDataModel):
 
         # calculate total numbeer of pages 
         total_pages = total_ducoments // page_size
+
         if total_ducoments % page_size> 0:
             total_page =+ 1
 
         cursor = self.collection.find().skip((page - 1 ) * page_size).limit(page_size)  #collect data 
+        
         Projects = []
         async for document in cursor :
             Projects.append(

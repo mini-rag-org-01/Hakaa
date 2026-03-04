@@ -20,6 +20,7 @@ data_router = APIRouter(
 async def upload_data(request: Request ,project_id: str,file : UploadFile, 
                       app_settings: Settings = Depends(get_settings)):
     
+    
     project_model =ProjectModel(
         db_client= request.app.db_client
     )
