@@ -1,4 +1,5 @@
 from ..LLMInterface import LLMInterface
+from ..LLMEnums import OpenAIEnums
 from openai import OpenAI
 import logging
 
@@ -33,8 +34,13 @@ class OpenAIProvider(LLMInterface):
           self.embedding_model_id = model_id   
           self.embedding_size = embedding_size
 
-     def generate_text(self, prompt: str, max_output_token: int = None,
-                      temperature: float = None):
+
+     def process_text(self, text: str):
+          return text[:self.default_input_max_characters].strip()
+     
+     def generate_text(self, prompt: str, max_output_token: int=None,
+                    chat_history: list=[],temperature: float = None):
+          
           if not self.client :
                self.logger.error("client was not set!")
                return None
@@ -45,7 +51,21 @@ class OpenAIProvider(LLMInterface):
           max_output_token = max_output_token if max_output_token else self.default_generation_max_output_tokens
           temperature = temperature if temperature else self.default_generation_tempreature
 
-     def embed_text(self, text, document_type):
+          chat_history.append(
+               self.construct_prompt(OpenAIEnums.USER.value)
+          )
+          response = self.client.chat.completions.create(
+               model = self.generation_moddel_id,
+               messages = chat_history, 
+               max_tokens = max_output_token,
+               temperature = temperature
+          )
+          if not response or not response.choices or len(response.choices) == 0 or not response.choices[0]:
+               self.logger.error("Error while text with openAI")
+               return None
+          return response.choices.message["content"]
+
+     def embed_text(self, text: str, document_type: str =None):
           if not self.client :
                self.logger.error("client was not set!")
                return None
@@ -63,4 +83,8 @@ class OpenAIProvider(LLMInterface):
           
           return response.data[0].embedding
 
-     
+     def construct_prompt(self, prompt: str, role: str):
+          return {
+               "role": role,
+               "content": self.process_text(prompt)
+          }

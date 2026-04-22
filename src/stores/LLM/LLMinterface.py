@@ -11,12 +11,12 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod  
-    def generate_text(self, prompt: str, max_output_token: int,
-                      temperature: float = None):
+    def generate_text(self, prompt: str, max_output_token: int=None,
+                    chat_history: list=[],temperature: float = None):
         pass
      
     @abstractmethod
-    def embed_text(self, text: str, document_type: str ):
+    def embed_text(self, text: str, document_type: str= None ):
         pass
 
     @abstractmethod
