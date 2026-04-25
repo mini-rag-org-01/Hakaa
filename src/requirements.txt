@@ -10,5 +10,5 @@ langchain-community==0.4.1
 motor==3.7.1
 
 openai
-
+cohere==6.0.0
 
