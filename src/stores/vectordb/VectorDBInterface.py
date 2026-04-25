@@ -22,10 +22,6 @@ class VectorDBInterface(ABC):
           pass
 
      @abstractmethod
-     def is_collection_existed(self, collection_name: str):
-          pass
-
-     @abstractmethod
      def delete_collection(self, collection_name: str):
           pass
 
@@ -50,9 +46,8 @@ class VectorDBInterface(ABC):
                     batch_size: int=50):
           
           pass
+     
 
      @abstractmethod
-     def search_by_vector(self, collection_name: str, vector: list, limit:int):
+     def search_by_vector(self, collection_name: str,vector: list, limit: int):
           pass
-     
-     
