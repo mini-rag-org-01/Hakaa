@@ -1,6 +1,5 @@
 {
      "python.languageServer": "Pylance",
      "python.analysis.autoTranslateDocstrings": true,
-     "python-envs.defaultEnvManager": "ms-python.python:conda",
      "python-envs.defaultPackageManager": "ms-python.python:conda"
 }
