@@ -3,7 +3,7 @@ from ..LLMEnums import CohereEnums,DocumentTypeEnum
 import cohere as co
 import logging
 
-class CohereProvider(LLMInterface):
+class CoHereProvider(LLMInterface):
 
      def __init__(self, api_key: str,
                   default_max_input_characters: int=1000,
