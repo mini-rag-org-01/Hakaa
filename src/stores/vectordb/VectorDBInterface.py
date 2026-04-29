@@ -44,10 +44,8 @@ class VectorDBInterface(ABC):
                     metadata: list=None,
                     recored_ids: list=None,
                     batch_size: int=50):
-          
           pass
      
-
      @abstractmethod
      def search_by_vector(self, collection_name: str,vector: list, limit: int):
           pass

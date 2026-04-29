@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     INPUT_DEFAULT_MAX_CHARACTERS: int = None
     GENERATION_DEFAULT_MAX_TOKENS: int = None
     GENERATION_DEFAULT_TEMPRATURE: float = None
+
+    VECTOR_DB_BACKEND : str
+    VECTOR_DB_PATH : str
+    VECTOR_DB_DISTANCE_METHOD: str = None
+
+    PRIMARY_LANG: str = "en"
+    DEFAULT_LANG: str = "en"
     class Config:
         env_file = ".env"
 
