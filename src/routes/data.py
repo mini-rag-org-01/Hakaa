@@ -1,13 +1,14 @@
 from fastapi import FastAPI, APIRouter, Depends, UploadFile, status, Request
 from fastapi.responses import JSONResponse
-import os 
 from models import ResponseSignal
-import aiofiles
 from helpers.config import get_settings, Settings
 from controllers import DataController, ProjectController, ProcessController
-import logging
 from .schemes.data import ProcessRequest
 from models.ProjectModel import ProjectModel
+import os 
+import aiofiles
+import logging
+
 
 logger = logging.getLogger('uvicorn.error')
 data_router = APIRouter(
@@ -88,7 +89,24 @@ async def process_endpoint(project_id:str, process_request : ProcessRequest ):
     overlap_size = process_request.overlap_size
     process_controller = ProcessController(project_id=project_id)
 
-    file_content = process_controller.get_file_content(file_id=file_id)
+    try:
+        file_content = process_controller.get_file_content(file_id=file_id)
+    except FileNotFoundError:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "signal": ResponseSignal.PROCESSING_FAILED.value,
+                "message": f"file '{file_id}' was not found in project '{project_id}'"
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "signal": ResponseSignal.PROCESSING_FAILED.value,
+                "message": str(e)
+            }
+        )
 
 
     file_chunks = process_controller.process_file_content(

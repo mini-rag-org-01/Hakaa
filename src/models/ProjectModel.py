@@ -30,8 +30,7 @@ class ProjectModel(BaseDataModel):
     async def create_project(self, project: Project):
 
         result = await self.collection.insert_one(project.dict(by_alias=True, exclude_unset=True))
-        project.id = result.inserted_id
-
+        project._id = result.inserted_id
         return project
 
     async def get_project_or_create_one(self, project_id: str):

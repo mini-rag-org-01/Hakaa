@@ -28,13 +28,20 @@ class ProcessController(BaseController):
         
 
         elif file_ext == ProcessingEnum.PDF.value:
-            return PyMuPDFLoader
+            return PyMuPDFLoader(file_path)
 
         return None
 
 
     def get_file_content(self, file_id: str):
+        file_path = os.path.join(self.project_path, file_id)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(file_path)
+
         loader = self.get_file_loader(file_id=file_id)
+        if loader is None:
+            raise ValueError(f"Unsupported file type for file_id: {file_id}")
+
         return loader.load()
 
 
