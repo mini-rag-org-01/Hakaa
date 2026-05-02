@@ -22,6 +22,11 @@ class ProcessController(BaseController):
             self.project_path ,
             file_id
         )
+        # Bug: processing used to blow up with a deep loader traceback when the file id
+        # did not exist under the given project folder.
+        # Fix: return `None` early so the route can handle the missing file more clearly.
+        if not os.path.exists(file_path):
+            return None
 
         if file_ext == ProcessingEnum.TXT.value:
             return TextLoader(file_path, encoding = "utf-8")
@@ -40,8 +45,10 @@ class ProcessController(BaseController):
 
         loader = self.get_file_loader(file_id=file_id)
         if loader is None:
+            # Bug: unsupported extensions used to fail later in less obvious ways.
+            # Fix: raise a direct validation error at the controller boundary.
             raise ValueError(f"Unsupported file type for file_id: {file_id}")
-
+        
         return loader.load()
 
 

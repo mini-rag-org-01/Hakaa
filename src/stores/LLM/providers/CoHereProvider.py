@@ -10,7 +10,10 @@ class CoHereProvider(LLMInterface):
                   default_generation_max_output_tokens: int=1000,
                   default_generation_temprature: float=0.1):
           self.api_key = api_key
-          self.default_max_input_characters = default_max_input_characters
+          # Bug: `process_text()` reads `self.default_input_max_characters`, so storing the
+          # constructor value under `default_max_input_characters` caused `AttributeError`.
+          # Fix: keep the attribute name aligned with the rest of the provider methods.
+          self.default_input_max_characters = default_max_input_characters
           self.default_generation_max_output_tokens = default_generation_max_output_tokens
           self.default_generation_temprature = default_generation_temprature
 
@@ -65,6 +68,14 @@ class CoHereProvider(LLMInterface):
 
 
      def embed_text(self, text: str, document_type: str =None):
+          # Fix: keep the single-text API, but route it through the new batch method
+          # so both code paths use the same validation and Cohere request format.
+          response = self.embed_texts([text], document_type=document_type)
+          if not response or len(response) == 0:
+               return None
+          return response[0]
+
+     def embed_texts(self, texts: list, document_type: str =None):
 
           if not self.client :
                self.logger.error("cohere client was not set!")
@@ -72,23 +83,34 @@ class CoHereProvider(LLMInterface):
           
           if not self.embedding_model_id: 
                self.logger.error("embedding model was not set")
+               return None
 
+          # Bug: the old code passed Enum members (for example `CohereEnums.DOCUMENT`)
+          # instead of their string values, and the document enum value itself had a typo.
+          # Cohere expects literal strings like `search_document` / `search_query`.
+          # Fix: send the literal string constants from `CohereEnums`.
           input_type = CohereEnums.DOCUMENT
-          if document_type == DocumentTypeEnum.QUEERY:
+          if document_type == DocumentTypeEnum.QUERY.value:
                input_type = CohereEnums.QUERY
 
+          # Fix: batch many chunks into one Cohere embed request to reduce API calls
+          # and avoid hitting the trial key rate limit as quickly.
           response = self.client.embed(
                model = self.embedding_model_id,
-               texts = [self.process_text(text)],
+               texts=[self.process_text(text) for text in texts],
                input_type = input_type,
                embedding_types=['float']
           )
           # response validation 
-          if not response or not response.embeddings or response.embeddings.float :       
+          # Bug: the old check treated a valid float embedding payload as an error because
+          # `response.embeddings.float` is supposed to exist on success.
+          # Fix: only fail when the float embeddings are missing or empty.
+          if not response or not response.embeddings or not response.embeddings.float:
                self.logger.error("Error while embedding text with cohere")
                return None 
           
-          return response.data[0].embedding
+          # Fix: return the whole batch of embeddings so callers can map one vector per chunk.
+          return response.embeddings.float
 
      def construct_prompt(self, prompt: str, role: str):
           return {

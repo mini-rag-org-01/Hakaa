@@ -1,5 +1,9 @@
 {
      "python.languageServer": "Pylance",
      "python.analysis.autoTranslateDocstrings": true,
-     "python-envs.defaultPackageManager": "ms-python.python:conda"
+     "python-envs.defaultPackageManager": "ms-python.python:conda",
+     "files.autoSave": "onWindowChange",
+     "editor.defaultFormatter": "esbenp.prettier-vscode",
+     "editor.wordWrap": "on",
+     "editor.mouseWheelZoom": true
 }

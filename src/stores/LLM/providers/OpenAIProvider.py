@@ -67,22 +67,31 @@ class OpenAIProvider(LLMInterface):
           return response.choices.message["content"]
 
      def embed_text(self, text: str, document_type: str =None):
+          # Fix: share one implementation for single and batched embedding calls.
+          response = self.embed_texts([text], document_type=document_type)
+          if not response or len(response) == 0:
+               return None
+          return response[0]
+
+     def embed_texts(self, texts: list, document_type: str =None):
           if not self.client :
                self.logger.error("client was not set!")
                return None
           if not self.embedding_model_id: 
                self.logger.error("embedding model was not set")
+               return None
 
           response = self.client.embeddings.create(
                model = self.embedding_model_id,
-               input = text
+               input=text
           )
           # response validation 
-          if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:       
+          if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:
                self.logger.error("Error while embedding text with OpenAI")
                return None 
           
-          return response.data[0].embedding
+          # Fix: return all vectors so the controller can embed many chunks in one request.
+          return [item.embedding for item in response.data]
 
      def construct_prompt(self, prompt: str, role: str):
           return {

@@ -67,11 +67,13 @@ class QdrantDBProvider(VectorDBInterface):
             return False
         
         try:
-            _ = self.client.upload_records(
+            # Bug: this qdrant-client version does not provide `upload_records`.
+            # Fix: use `upsert` with `PointStruct`, which is the stable insert API.
+            _ = self.client.upsert(
                 collection_name=collection_name,
-                records=[
-                    models.Record(
-                        id=[record_id],
+                points=[
+                    models.PointStruct(
+                        id=record_id,
                         vector=vector,
                         payload={
                             "text": text, "metadata": metadata
@@ -104,7 +106,7 @@ class QdrantDBProvider(VectorDBInterface):
             batch_record_ids = record_ids[i:batch_end]
 
             batch_records = [
-                models.Record(
+                models.PointStruct(
                     id=batch_record_ids[x],
                     vector=batch_vectors[x],
                     payload={
@@ -116,9 +118,11 @@ class QdrantDBProvider(VectorDBInterface):
             ]
 
             try:
-                _ = self.client.upload_records(
+                # Bug: same missing-method issue here as in `insert_one`.
+                # Fix: batch insert with `upsert(points=[...])`.
+                _ = self.client.upsert(
                     collection_name=collection_name,
-                    records=batch_records,
+                    points=batch_records,
                 )
             except Exception as e:
                 self.logger.error(f"Error while inserting batch: {e}")
@@ -126,15 +130,15 @@ class QdrantDBProvider(VectorDBInterface):
 
         return True
         
-    def search_by_vector(self, collection_name: str, vector: list, limit: int = 5):
+    def search_by_vector(self, collection_name: str, vector: list, limit: int = 5) :
 
-        results = self.client.search(
+        results = self.client.query_points(
             collection_name=collection_name,
-            query_vector=vector,
+            query=vector,
             limit=limit
         )
 
-        if not results or len(results) == 0:
+        if not results.points:
             return None
         
         return [
@@ -142,5 +146,5 @@ class QdrantDBProvider(VectorDBInterface):
                 "score": result.score,
                 "text": result.payload["text"],
             })
-            for result in results
+            for result in results.points
         ]

@@ -63,7 +63,9 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "signal": ResponseSignal.FILE_UPLOAD_FAILED.value
+                # Bug: the enum name is `FILE_UPLOADED_FAILED`, not `FILE_UPLOAD_FAILED`.
+                # Fix: use the actual enum member name.
+                "signal": ResponseSignal.FILE_UPLOADED_FAILED.value
             }
         )
 
@@ -83,8 +85,13 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
 
     return JSONResponse(
             content={
-                "signal": ResponseSignal.FILE_UPLOAD_SUCCESS.value,
-                "file_id": str(asset_record.id),
+                # Bug: the enum name is `FILE_UPLOADED_SUCCESS`, not `FILE_UPLOAD_SUCCESS`.
+                # Fix: use the correct enum member.
+                "signal": ResponseSignal.FILE_UPLOADED_SUCCESS.value,
+                # Bug: later processing expects the saved filename, not the Mongo asset id.
+                # Fix: return the stored asset name as `file_id`, and expose the DB id separately as `asset_id`.
+                "file_id": asset_record.asset_name,
+                "asset_id": str(asset_record.id),
             }
         )
 
@@ -128,7 +135,6 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
     
     else:
         
-
         project_files = await asset_model.get_all_project_assets(
             asset_project_id=project.id,
             asset_type=AssetTypeEnum.FILE.value,
@@ -160,7 +166,6 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
         _ = await chunk_model.delete_chunks_by_project_id(
             project_id=project.id
         )
-
     for asset_id, file_id in project_files_ids.items():
 
         file_content = process_controller.get_file_content(file_id=file_id)
@@ -200,7 +205,9 @@ async def process_endpoint(request: Request, project_id: str, process_request: P
 
     return JSONResponse(
         content={
-            "signal": ResponseSignal.PROCESSING_SUCCESS.value,
+            # Note: this endpoint only processes files into chunks in Mongo.
+            # The project already uses this success enum, so we keep it for compatibility even though the name is misleading.
+            "signal": ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS.value,
             "inserted_chunks": no_records,
             "processed_files": no_files
         }

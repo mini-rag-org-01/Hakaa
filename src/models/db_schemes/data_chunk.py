@@ -8,6 +8,10 @@ class DataChunk(BaseModel):
     chunk_metadata : dict
     chunk_order : int = Field(..., gt = 0)
     chunk_project_id : ObjectId
+    # Bug: the processing route was creating `DataChunk(..., chunk_asset_id=...)`,
+    # but the schema had no such field.
+    # Fix: add the field so each chunk can be traced back to its source asset.
+    chunk_asset_id : ObjectId
    
     
     #skip any error
