@@ -22,7 +22,8 @@ class OpenAIProvider(LLMInterface):
 
           self.client = OpenAI(
                api_key = self.api_key,
-               base_url = self.api_url
+               base_url = self.api_url if self.api_url and len(self.api_url) else None
+
           )
 
           self.enums = OpenAIEnums
@@ -54,8 +55,9 @@ class OpenAIProvider(LLMInterface):
           temperature = temperature if temperature else self.default_generation_tempreature
 
           chat_history.append(
-               self.construct_prompt(OpenAIEnums.USER.value)
-          )
+          self.construct_prompt(prompt=prompt, role=OpenAIEnums.USER))
+
+
           response = self.client.chat.completions.create(
                model = self.generation_moddel_id,
                messages = chat_history, 
@@ -65,7 +67,10 @@ class OpenAIProvider(LLMInterface):
           if not response or not response.choices or len(response.choices) == 0 or not response.choices[0]:
                self.logger.error("Error while text with openAI")
                return None
-          return response.choices.message["content"]
+          # Bug: `choices` is a list, so `response.choices.message` raises
+          # `AttributeError: 'list' object has no attribute 'message'`.
+          # Fix: read the first choice, then access its message content.
+          return response.choices[0].message.content
 
      def embed_text(self, text: str, document_type: str =None):
           # Fix: share one implementation for single and batched embedding calls.
@@ -84,7 +89,10 @@ class OpenAIProvider(LLMInterface):
 
           response = self.client.embeddings.create(
                model = self.embedding_model_id,
-               input=text
+               # Bug: `text` does not exist in this batched method; the payload should be the
+               # incoming `texts` list so OpenAI returns one embedding per input string.
+               # Fix: pass `texts` to the embeddings API.
+               input=texts
           )
           # response validation 
           if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:

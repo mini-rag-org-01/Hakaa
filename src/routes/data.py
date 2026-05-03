@@ -42,7 +42,7 @@ async def upload_data(request: Request, project_id: str, file: UploadFile,
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "signal": result_signal
+                "signal": result_signal.value
             }
         )
 

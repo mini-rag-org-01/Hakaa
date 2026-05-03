@@ -115,12 +115,12 @@ class NLPController(BaseController):
                     )
                for idx, doc in enumerate(retieved_documents)
           ])
-          footer_prompt = self.template_parser.get("rag","footer_prompt",)
+          footer_prompt = self.template_parser.get("rag","footer_template",)
 
           chat_history = [
                self.generation_client.construct_prompt(
                     prompt=system_prompt,
-                    role= self.generation_client.enums.SYSTEM.value,
+                    role= self.generation_client.enums.SYSTEM
                )
           ]
 

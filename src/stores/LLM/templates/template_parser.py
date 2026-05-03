@@ -1,6 +1,6 @@
 import os 
 
-class TemplsteParser:
+class TemplateParser:
 
     def __init__(self, lnaguage: str=None, default_language='en'):
         self.current_path = os.path.dirname(os.path.abspath(__file__))
