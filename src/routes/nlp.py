@@ -5,6 +5,7 @@ from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from controllers import NLPController
 from models import ResponseSignal 
+from models.db_schemes.retrieved_document import RetrievedDocument
 import logging
 
 logger = logging.getLogger("uvicorn.error")#route logger

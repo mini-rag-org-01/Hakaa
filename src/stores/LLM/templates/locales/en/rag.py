@@ -28,7 +28,10 @@ footer_template = Template(
     "\n".join(
         [
             "Based only on the above documents, please generate an answer for the user.",
-            "## Answer:",
+        "## :Question",
+        "$query",
+        " ",
+        "## Answer:",
         ]
     )
 )

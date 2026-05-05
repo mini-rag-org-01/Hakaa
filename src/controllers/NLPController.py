@@ -1,6 +1,7 @@
 from .BaseController import BaseController
 from models.db_schemes import Project, DataChunk
 from stores.LLM.LLMEnums import DocumentTypeEnum
+from models.db_schemes.retrieved_document import RetrievedDocument
 from typing import List
 
 class NLPController(BaseController):
@@ -77,14 +78,14 @@ class NLPController(BaseController):
                vector = vector,
                limit = limit 
           )
-          
           if not results:
                return 
           
           return [
-               result.dict()
-               for result in results
+               result.dict()        
+               for result in results 
           ]
+      
      
      def answer_rag_question(self, project: Project, query: str, limit: int = 10):
           # step1: retrieve related documents 
@@ -115,7 +116,9 @@ class NLPController(BaseController):
                     )
                for idx, doc in enumerate(retieved_documents)
           ])
-          footer_prompt = self.template_parser.get("rag","footer_template",)
+          footer_prompt = self.template_parser.get("rag","footer_template",{
+               "query": query
+          })
 
           chat_history = [
                self.generation_client.construct_prompt(
