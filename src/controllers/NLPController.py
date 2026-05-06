@@ -3,6 +3,9 @@ from models.db_schemes import Project, DataChunk
 from stores.LLM.LLMEnums import DocumentTypeEnum
 from models.db_schemes.retrieved_document import RetrievedDocument
 from typing import List
+import logging
+
+logger = logging.getLogger(__name__)
 
 class NLPController(BaseController):
      def __init__(self,vectordb_client, generation_client,embedding_client, template_parser):
@@ -88,50 +91,50 @@ class NLPController(BaseController):
       
      
      def answer_rag_question(self, project: Project, query: str, limit: int = 10):
-          # step1: retrieve related documents 
+          # step1: retrieve related documents
           retieved_documents = self.search_vector_db_collection(project=project, text=query, limit=limit)
 
+          # Bug: returning None here caused a TypeError when the route tried to unpack
+          # the result as (answer, full_prompt, chat_history).
+          # Fix: always return a consistent tuple so the route can handle it cleanly.
           if not retieved_documents or len(retieved_documents) == 0:
-               return None
-          # step2: construct llm prompt
-          # A
+               logger.warning("No documents retrieved from vector DB for query: '%s'", query)
+               return None, None, None
+
+          logger.info("Retrieved %d documents from vector DB.", len(retieved_documents))
+
+          # step2: construct LLM prompt
           system_prompt = self.template_parser.get("rag", "system_prompt")
-          # B
-          # documents_prompts = []
-          # for idx, doc in enumerate(retieved_documents):
-          #      documents_prompts.append(
-          #           self.template_parser.get("rag",
-          #                          "document_prompt",
-          #                          {
-          #                               "doc_name" : idx,
-          #                               "chunk_text" : doc
-          #                          }
-          #           )
-          #      )
+
           documents_prompts = "\n".join([
-               self.template_parser.get("rag","document_prompt",{
-                                        "doc_name" : idx,
-                                        "chunk_text" : doc
-                                   }
-                    )
+               self.template_parser.get("rag", "document_prompt", {
+                    "doc_name": idx,
+                    "chunk_text": doc
+               })
                for idx, doc in enumerate(retieved_documents)
           ])
-          footer_prompt = self.template_parser.get("rag","footer_template",{
+
+          footer_prompt = self.template_parser.get("rag", "footer_template", {
                "query": query
           })
 
           chat_history = [
                self.generation_client.construct_prompt(
                     prompt=system_prompt,
-                    role= self.generation_client.enums.SYSTEM
+                    role=self.generation_client.enums.SYSTEM
                )
           ]
 
           full_prompt = "\n\n".join([documents_prompts, footer_prompt])
 
+          logger.info("Sending prompt to LLM (length: %d chars).", len(full_prompt))
+
           answer = self.generation_client.generate_text(
                prompt=full_prompt,
-               chat_history= chat_history
+               chat_history=chat_history
           )
+
+          if not answer:
+               logger.error("LLM returned no answer. Check that Ollama is running on port 11434.")
 
           return answer, full_prompt, chat_history

@@ -1,6 +1,6 @@
 from ..LLMInterface import LLMInterface
 from ..LLMEnums import OpenAIEnums
-from openai import OpenAI
+from openai import OpenAI, APIConnectionError
 import logging
 
 class OpenAIProvider(LLMInterface):
@@ -57,19 +57,24 @@ class OpenAIProvider(LLMInterface):
           chat_history.append(
           self.construct_prompt(prompt=prompt, role=OpenAIEnums.USER))
 
-
-          response = self.client.chat.completions.create(
-               model = self.generation_moddel_id,
-               messages = chat_history, 
-               max_tokens = max_output_token,
-               temperature = temperature
-          )
-          if not response or not response.choices or len(response.choices) == 0 or not response.choices[0]:
-               self.logger.error("Error while text with openAI")
+          try:
+               response = self.client.chat.completions.create(
+                    model = self.generation_moddel_id,
+                    messages = chat_history,
+                    max_tokens = max_output_token,
+                    temperature = temperature
+               )
+          except APIConnectionError as e:
+               self.logger.error(
+                    f"LLM connection error: could not reach '{self.api_url}'. "
+                    f"Make sure Ollama (or your LLM server) is running. Details: {e}"
+               )
                return None
-          # Bug: `choices` is a list, so `response.choices.message` raises
-          # `AttributeError: 'list' object has no attribute 'message'`.
-          # Fix: read the first choice, then access its message content.
+
+          if not response or not response.choices or len(response.choices) == 0 or not response.choices[0]:
+               self.logger.error("Error while generating text with OpenAI")
+               return None
+
           return response.choices[0].message.content
 
      def embed_text(self, text: str, document_type: str =None):
@@ -87,19 +92,24 @@ class OpenAIProvider(LLMInterface):
                self.logger.error("embedding model was not set")
                return None
 
-          response = self.client.embeddings.create(
-               model = self.embedding_model_id,
-               # Bug: `text` does not exist in this batched method; the payload should be the
-               # incoming `texts` list so OpenAI returns one embedding per input string.
-               # Fix: pass `texts` to the embeddings API.
-               input=texts
-          )
-          # response validation 
+          try:
+               response = self.client.embeddings.create(
+                    model = self.embedding_model_id,
+                    input=texts
+               )
+          except APIConnectionError as e:
+               self.logger.error(
+                    f"LLM connection error: could not reach '{self.api_url}'. "
+                    f"Make sure Ollama (or your LLM server) is running. Details: {e}"
+               )
+               return None
+
+          # response validation
           if not response or not response.data or len(response.data) == 0 or not response.data[0].embedding:
                self.logger.error("Error while embedding text with OpenAI")
-               return None 
-          
-          # Fix: return all vectors so the controller can embed many chunks in one request.
+               return None
+
+          # Return all vectors so the controller can embed many chunks in one request.
           return [item.embedding for item in response.data]
 
      def construct_prompt(self, prompt: str, role: str):
