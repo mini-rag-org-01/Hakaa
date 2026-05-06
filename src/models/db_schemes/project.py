@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional
 from bson.objectid import ObjectId  # id type 
 
-class Project(BaseModel):
+class Project( ):
     # Bug: the codebase was using `project.id`, but the schema only exposed `_id`.
     # Fix: expose `id` in Python code and map it to Mongo's `_id` via an alias.
     id: Optional[ObjectId] = Field(None, alias="_id")
