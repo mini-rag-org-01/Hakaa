@@ -24,7 +24,7 @@ class DataChunk(SQLAlchemyBase):
 
     
 
-    __table_arg__ = (
+    __table_args__ = (
         Index('ix_chunk_project_id', chunk_project_id),
         Index('ix_chunk_asset_id', chunk_asset_id),
     )

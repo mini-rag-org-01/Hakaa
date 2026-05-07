@@ -1,7 +1,6 @@
 from .BaseController import BaseController
-from models.db_schemes import Project, DataChunk
+from models.db_schemes.minirag.schemes import Project, DataChunk
 from stores.LLM.LLMEnums import DocumentTypeEnum
-from models.db_schemes.retrieved_document import RetrievedDocument
 from typing import List
 import logging
 
