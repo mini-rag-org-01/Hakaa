@@ -1,7 +1,7 @@
 from time import timezone
 from .minirag_base import SQLAlchemyBase
 from sqlalchemy import Column, Integer, String, DateTime, func, ForeignKey, Index
-from sqlalchemy.dialects.postgres import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 import uuid
@@ -17,7 +17,7 @@ class DataChunk(SQLAlchemyBase):
     chunk_asset_id =  Column(Integer,ForeignKey("assets.asset_id") ,nullable=False )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), onupdated=func.now(), nullable=True)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
     project = relationship("Project" , back_populates="chunks")
     asset = relationship("Asset" , back_populates="chunks")
