@@ -104,11 +104,12 @@ class NLPController(BaseController):
 
           # step2: construct LLM prompt
           system_prompt = self.template_parser.get("rag", "system_prompt")
-
+          print(retieved_documents)
+     
           documents_prompts = "\n".join([
                self.template_parser.get("rag", "document_prompt", {
-                    "doc_name": idx,
-                    "chunk_text": doc
+                    "doc_num": idx,
+                    "chunk_text": self.generation_client.process_text(doc["text"]) 
                })
                for idx, doc in enumerate(retieved_documents)
           ])
