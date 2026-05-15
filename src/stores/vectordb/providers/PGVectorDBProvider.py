@@ -7,7 +7,7 @@ from models.db_schemes import RetrievedDocument
 from sqlalchemy.sql import text as sql_text
 import json
 
-class PgVectorDBProvider(VectorDBInterface):
+class PGVectorDBProvider(VectorDBInterface):
 
     def __init__(self, db_client, default_vector_size: int=786, distance_method: str=None, index_threshold: int=100):
         self.db_client = db_client
