@@ -2,6 +2,7 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import CohereEnums,DocumentTypeEnum
 import cohere as co
 import logging
+from typing import Union, List
 
 class CoHereProvider(LLMInterface):
 
@@ -67,37 +68,25 @@ class CoHereProvider(LLMInterface):
      
 
 
-     def embed_text(self, text: str, document_type: str =None):
-          # Fix: keep the single-text API, but route it through the new batch method
-          # so both code paths use the same validation and Cohere request format.
-          response = self.embed_texts([text], document_type=document_type)
-          if not response or len(response) == 0:
-               return None
-          return response[0]
-
-     def embed_texts(self, texts: list, document_type: str =None):
-
-          if not self.client :
+     def embed_text(self, text: Union[str, List[str]], document_type: str =None):
+        
+          if not self.client:
                self.logger.error("cohere client was not set!")
                return None
-          
-          if not self.embedding_model_id: 
-               self.logger.error("embedding model was not set")
-               return None
+          if isinstance(text, str):
+               text = [text]
 
-          # Bug: the old code passed Enum members (for example `CohereEnums.DOCUMENT`)
-          # instead of their string values, and the document enum value itself had a typo.
-          # Cohere expects literal strings like `search_document` / `search_query`.
-          # Fix: send the literal string constants from `CohereEnums`.
+          if not self.embedding_model_id: 
+               self.logger.error("embedding model for cohere was not set")
+               return None
+   
           input_type = CohereEnums.DOCUMENT
           if document_type == DocumentTypeEnum.QUERY.value:
                input_type = CohereEnums.QUERY
 
-          # Fix: batch many chunks into one Cohere embed request to reduce API calls
-          # and avoid hitting the trial key rate limit as quickly.
           response = self.client.embed(
                model = self.embedding_model_id,
-               texts=[self.process_text(text) for text in texts],
+               texts=[self.process_text(txt) for txt in text],
                input_type = input_type,
                embedding_types=['float']
           )

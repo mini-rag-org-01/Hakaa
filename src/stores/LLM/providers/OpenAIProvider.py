@@ -2,6 +2,7 @@ from ..LLMInterface import LLMInterface
 from ..LLMEnums import OpenAIEnums
 from openai import OpenAI, APIConnectionError
 import logging
+from typing import Union, List
 
 class OpenAIProvider(LLMInterface):
 
@@ -77,25 +78,22 @@ class OpenAIProvider(LLMInterface):
 
           return response.choices[0].message.content
 
-     def embed_text(self, text: str, document_type: str =None):
-          # Fix: share one implementation for single and batched embedding calls.
-          response = self.embed_texts([text], document_type=document_type)
-          if not response or len(response) == 0:
-               return None
-          return response[0]
-
-     def embed_texts(self, texts: list, document_type: str =None):
+     def embed_text(self, text: Union[str, List[str]], document_type: str =None):
           if not self.client :
-               self.logger.error("client was not set!")
+               self.logger.error("OpenAI client was not set!")
                return None
+
+          if isinstance(text, str):
+               text = [text]
+               
           if not self.embedding_model_id: 
-               self.logger.error("embedding model was not set")
+               self.logger.error("embedding model for OpenAI was not set")
                return None
 
           try:
                response = self.client.embeddings.create(
                     model = self.embedding_model_id,
-                    input=texts
+                    input=text
                )
           except APIConnectionError as e:
                self.logger.error(

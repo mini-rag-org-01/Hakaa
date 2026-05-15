@@ -9,7 +9,7 @@ class LLMInterface(ABC):
     @abstractmethod 
     def set_embedding_model(self, model_id: str, embeddig_size:int):
         pass
-
+ 
     @abstractmethod  
     def generate_text(self, prompt: str, max_output_token: int=None,
                     chat_history: list=[],temperature: float = None):
