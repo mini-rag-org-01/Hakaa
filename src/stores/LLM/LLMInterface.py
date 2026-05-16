@@ -20,7 +20,7 @@ class LLMInterface(ABC):
         pass
 
     @abstractmethod
-    def embed_texts(self, texts: list, document_type: str = None):
+    def embed_text(self, texts: list, document_type: str = None):
         pass
 
     @abstractmethod

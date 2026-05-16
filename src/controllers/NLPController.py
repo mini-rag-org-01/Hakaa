@@ -30,8 +30,7 @@ class NLPController(BaseController):
           return collection_info
  
      async def index_into_vector_db(self, project:Project, chunks: List[DataChunk], 
-                              chunks_ids : List[int], 
-                              do_reset: bool = False):
+                              chunks_ids : List[int]):
           # Bug: using `Project.project_id` raised `AttributeError: project_id`.
           # Fix: derive the collection name from the current project instance.
           collection_name = self.create_collection_name(project_id=project.project_id)
@@ -42,28 +41,20 @@ class NLPController(BaseController):
           # Bug: embedding one chunk per API call quickly hits Cohere's trial limit.
           # Fix: send the whole page of chunk texts in a single batched embed request.
           vectors = self.embedding_client.embed_text (
-               texts=texts,
+               text=texts,
                document_type=DocumentTypeEnum.DOCUMENT.value
           )
           if not vectors or len(vectors) != len(texts):
                return False
 
-          # Bug: `vectordb_client.embedding_sizev` does not exist on the vector DB client.
-          # Fix: the embedding size belongs to the embedding client that produced the vectors.
-          _ = await self.vectordb_client.create_collection(
-               collection_name=collection_name,
-               do_reset=do_reset,
-               embedding_size=self.embedding_client.embedding_size
-
-          )
-          # Bug: the old code discarded the insert result, so the route could not tell whether insertion worked.
-          # Fix: return the provider result to the caller.
+          # The route prepares the collection once before paging starts.
+          # Recreating it here would reset the table on every batch when `do_reset=True`.
           return await self.vectordb_client.insert_many(
                collection_name=collection_name,
                texts=texts,
                vectors=vectors,
                metadata=metadata,
-               record_ids = chunks_ids,
+               recored_ids = chunks_ids,
           )
      
      async def search_vector_db_collection(self, project: Project, text: str, limit: int=10):

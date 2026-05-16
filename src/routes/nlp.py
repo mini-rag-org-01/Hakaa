@@ -79,7 +79,6 @@ async def index_project(request: Request,project_id: int, push_request: PushRequ
 
           is_inserted = await nlp_controller.index_into_vector_db(project=project,
                                                   chunks=page_chunks,
-                                                  do_reset=push_request.do_reset,
                                                   chunks_ids= chunks_ids)
           if not is_inserted:
                return JSONResponse(
@@ -94,7 +93,6 @@ async def index_project(request: Request,project_id: int, push_request: PushRequ
           content={ "signal" :ResponseSignal.INSERT_INTO_VECTORDB_SUCCESS.value,
                      "inseerted_item_count" : inseerted_item_count }
      )
-
 
 @nlp_router.get("/index/info/{project_id}")
 async def get_project_index_info(request: Request, project_id: int):
@@ -115,7 +113,7 @@ async def get_project_index_info(request: Request, project_id: int):
 
      return JSONResponse(
           content={ "signal" :ResponseSignal.VECTORDB_COLLECTION_RETRIEVED.value,
-                     "inseerted_item_count" : collection_info.dict()  }
+                     "inseerted_item_count" : collection_info['record_count'] }
      )
 
 

@@ -122,12 +122,12 @@ async def process_endpoint(request: Request, project_id: int, process_request: P
         )
 
     project_files_ids = {}
+
     if process_request.file_id:
         asset_record = await asset_model.get_asset_record(
             asset_project_id=project.project_id,
             asset_name=process_request.file_id
         )
-
         if asset_record is None:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -135,13 +135,11 @@ async def process_endpoint(request: Request, project_id: int, process_request: P
                     "signal": ResponseSignal.FILE_ID_ERROR.value,
                 }
             )
-
         project_files_ids = {
             asset_record.asset_id: asset_record.asset_name
         }
     
     else:
-        
         project_files = await asset_model.get_all_project_assets(
             asset_project_id=project.project_id,
             asset_type=AssetTypeEnum.FILE.value,
