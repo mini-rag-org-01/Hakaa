@@ -3,8 +3,15 @@ from .ProjectController import ProjectController
 import os
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from models import ProcessingEnum
+from typing import List
+from dataclasses import dataclass
+
+@dataclass
+class Documents: 
+    page_content: str
+    metadata: dict
+
 
 class ProcessController(BaseController):
     def __init__(self, project_id: str):
@@ -54,11 +61,6 @@ class ProcessController(BaseController):
 
     def process_file_content(self, file_content: list, file_id:str,
                             chunk_size: int = 100 , overlap_size: int=20):
-        text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=overlap_size,
-        length_function=len,
-        )
         file_content_texts = [
             rec.page_content
             for rec in file_content
@@ -67,10 +69,31 @@ class ProcessController(BaseController):
             rec.metadata
             for rec in file_content
         ]
+        chunks = self.prosecc_simpler_splitter(
+            texts = file_content_texts,
+            metadatas=file_content_metadata,
+            chunk_size=chunk_size
+            )
 
-        chunks = text_splitter.create_documents(
-            file_content_texts,
-            metadatas = file_content_metadata
-        )
+        return chunks
+    def prosecc_simpler_splitter(self, texts: List[str], metadatas: List[dict], chunk_size: int, splitter_tag : str="\n"):
+        full_text= " ".join(texts)
 
+        lines = [ doc.strip() for doc in full_text.split(splitter_tag) if len(doc.strip())> 1]
+        chunks = []
+        current_chunk = ""
+        for line in lines:
+            current_chunk += splitter_tag + line
+            if len(current_chunk) >= chunk_size:
+                chunks.append(Documents(
+                    page_content=current_chunk.strip(),
+                    metadata={}
+                ))
+                current_chunk = ""
+        
+        if len(current_chunk) > 0:
+            chunks.append(Documents(
+                page_content=current_chunk.strip(),
+                metadata={}
+            ))
         return chunks

@@ -1,5 +1,5 @@
 from ..VectorDBInterface import VectorDBInterface
-from ..VectorDBEnums import PgVectorTableSChemeEnums,PgVectorDistanceMethodEnums,PgVectorIndexTypeEnums
+from ..VectorDBEnums import PgVectorTableSChemeEnums,PgVectorDistanceMethodEnums,PgVectorIndexTypeEnums,DistanceMethodEnums
 import logging 
 from typing import List 
 from models.db_schemes import RetrievedDocument
@@ -12,8 +12,16 @@ class PGVectorDBProvider(VectorDBInterface):
     def __init__(self, db_client, default_vector_size: int=786, distance_method: str=None, index_threshold: int=100):
         self.db_client = db_client
         self.default_vector_size = default_vector_size
-        self.distance_method = distance_method
         self.pgvector_table_prefix = PgVectorTableSChemeEnums._PREFIX.value
+
+        if distance_method ==  DistanceMethodEnums.COSINE.value:
+            distance_method = PgVectorDistanceMethodEnums.COSINE.value
+        elif distance_method ==  DistanceMethodEnums.DOT.value:
+            distance_method = PgVectorDistanceMethodEnums.DOT.value
+        elif distance_method ==  DistanceMethodEnums.EUCLIDEAN.value:
+            distance_method = PgVectorDistanceMethodEnums.EUCLIDEAN.value
+
+        self.distance_method = distance_method
 
         self.logger = logging.getLogger("uvicorn")
         self.default_index_name = lambda collection_name : f'{collection_name}_vector_idx'
@@ -57,17 +65,22 @@ class PGVectorDBProvider(VectorDBInterface):
                 WHERE tablename = :collection_name
                 ''')
                 count_sql = sql_text(f'SELECT COUNT(*) FROM "{collection_name}"')
-
                 tbl_info = await session.execute(tbl_info_sql,{'collection_name' : collection_name})
-                tbl_data = tbl_info.fetchone()
-                if not tbl_data:
+                record_count_result = await session.execute(count_sql)
+
+                table_data = tbl_info.fetchone()
+                if not table_data: 
                     return None
 
-                record_count_result = await session.execute(count_sql)
-                record_count = record_count_result.scalar_one()
                 return {
-                    "table_info" : dict(tbl_data),
-                    "record_count" : record_count,
+                    "table_info" :{
+                        "schemaname": table_data[0],
+                        "tablename": table_data[1],
+                        "tableowner": table_data[2],
+                        "tablespace": table_data[3],
+                        "hasindexes": table_data[4],
+                    },
+                    "record_count" : record_count_result.scalar_one(),
                 }
                 
 
@@ -124,7 +137,7 @@ class PGVectorDBProvider(VectorDBInterface):
                                     index_type: str = PgVectorIndexTypeEnums.HNSW.value):
         is_index_existed = await self.is_index_existed(collection_name=collection_name)
         if is_index_existed:
-            self.logger.info(f"Index already existed: {collection_name}")
+            # self.logger.info(f"Index already existed: {collection_name}")
             return False
         async with self.db_client() as session:
             async with session.begin():
@@ -133,8 +146,8 @@ class PGVectorDBProvider(VectorDBInterface):
                 records_count = result.scalar_one()
 
                 if records_count < self.index_threshold:
-                    self.logger.info(f"records is less than threshold {self.index_threshold} "
-                                    f"so can't create vector index for collection {collection_name}")
+                    # self.logger.info(f"records is less than threshold {self.index_threshold} "
+                                    # f"so can't create vector index for collection {collection_name}")
                     return False
 
                 self.logger.info(f"Creating vector index for collection {collection_name}")
@@ -191,6 +204,8 @@ class PGVectorDBProvider(VectorDBInterface):
                 'metadata':metadata_json,
                 'chunk_id': recored_id})
                 await session.commit()
+        
+        await self.create_vector_index(collection_name=collection_name)
         return True
 
     async def insert_many(self, collection_name: str,texts:list, vectors:list,
@@ -231,6 +246,7 @@ class PGVectorDBProvider(VectorDBInterface):
                                 f'{PgVectorTableSChemeEnums.CHUNK_ID.value} '
                                 f') VALUES (:text, :vector, :metadata, :chunk_id)')
                     await session.execute(batch_insert_sql, values)
+        await self.create_vector_index(collection_name=collection_name)
         return True
 
     
@@ -239,17 +255,17 @@ class PGVectorDBProvider(VectorDBInterface):
         if not is_collection_existed:
             self.logger.error(f"Can not search in non-existed collection: {collection_name}")
             return []
-        vector = '[' + ','.join(str(v) for v in vector) +']',
+        vector = "[" + ",".join(str(v) for v in vector) +"]"  
 
         async with self.db_client() as session:
             async with session.begin():
-                search_sql = sql_text(f'SELECT {PgVectorTableSChemeEnums.TEXT.value} AS text,'
-                                        '1 - {PgVectorTableSChemeEnums.VECTOR.value} AS score,'
-                                        'FROM {collection_name}'
-                                        'ORDER BY sccore DESC'
-                                        f'LIMIT {limit}') 
+                search_sql = sql_text(f'SELECT {PgVectorTableSChemeEnums.TEXT.value} as text, '
+                                        f'1 - ({PgVectorTableSChemeEnums.VECTOR.value} <=> :vector) as score '
+                                       f' FROM {collection_name} '
+                                       'ORDER BY score DESC '
+                                       f'LIMIT {limit}') 
                 result = await session.execute(search_sql, {'vector': vector})
-                records = result.fitchall()
+                records = result.fetchall()
 
                 return [
                     RetrievedDocument(

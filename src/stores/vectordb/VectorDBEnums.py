@@ -7,6 +7,7 @@ class VectorDBEnums(Enum):
 class DistanceMethodEnums(Enum):
      COSINE = "cosine"
      DOT = "dot"
+     EUCLIDEAN = "euclidean"
 
 class PgVectorTableSChemeEnums(Enum):
      ID = "id"
@@ -17,7 +18,7 @@ class PgVectorTableSChemeEnums(Enum):
      _PREFIX = "pgvector"
 
 class PgVectorDistanceMethodEnums(Enum):
-     OSINE = "vector_cosine_ops"
+     COSINE = "vector_cosine_ops"
      DOT = "vector_l2_ops"
      EUCLIDEAN = "vector_euclidean_ops"
 

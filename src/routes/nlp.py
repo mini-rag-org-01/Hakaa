@@ -61,21 +61,14 @@ async def index_project(request: Request,project_id: int, push_request: PushRequ
      pbar = tqdm(total=total_chunks_count, desc='Vector Indexing', position=0)
 
 
-
-     
-
      while has_records and is_indexed_status:
-          # Bug: this is an async model method; without `await` the code got a coroutine instead of chunk data.
-          # Fix: await the paged chunk fetch and query by the Mongo project id stored in chunk records.
-          
           page_chunks = await chunk_model.get_poject_chunks(project_id=project.project_id, page_no=page_no)
           if not page_chunks or len(page_chunks) == 0:
                has_records = False
                break
-          # Fix: advance the page only after a real page of chunks was returned.
           page_no += 1
-          chunks_ids = list(range(idx, idx+len(page_chunks))) 
-          idx += len(page_chunks)
+          chunks_ids = [c.chunk_id for c in page_chunks]
+          idx += len(page_chunks) 
 
           is_inserted = await nlp_controller.index_into_vector_db(project=project,
                                                   chunks=page_chunks,
@@ -113,7 +106,8 @@ async def get_project_index_info(request: Request, project_id: int):
 
      return JSONResponse(
           content={ "signal" :ResponseSignal.VECTORDB_COLLECTION_RETRIEVED.value,
-                     "inseerted_item_count" : collection_info['record_count'] }
+                    "collection_info" : collection_info['table_info'],
+                    "record_count" : collection_info['record_count'] }
      )
 
 

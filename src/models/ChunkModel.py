@@ -46,7 +46,7 @@ class ChunkModel(BaseDataModel):
                 await session.commit()
         return result.rowcount      
 
-    async def get_poject_chunks(self, project_id: ObjectId, page_no: int=1, page_size: int=50):
+    async def get_poject_chunks(self, project_id: ObjectId, page_no: int=1, page_size: int=20):
         async with self.db_client() as session:
             stmt = select(DataChunk).where(DataChunk.chunk_project_id==project_id).order_by(DataChunk.chunk_order).offset((page_no-1)*page_size).limit(page_size)
             result = await session.execute(stmt)
@@ -54,9 +54,10 @@ class ChunkModel(BaseDataModel):
         return records
 
     async def get_chunk_count(self,project_id:ObjectId):
-        records_count = 0
+        total_count = 0
         async with self.db_client() as session:
             count_sql = select(func.count(DataChunk.chunk_id)).where(DataChunk.chunk_project_id==project_id)
-            records_count = await session.execute(count_sql)
-            return records_count.scalar()
+            result = await session.execute(count_sql)
+            total_count = result.scalar()
+        return total_count
 
