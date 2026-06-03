@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# import metrics 
+from utils import setup_metrics
+
 app = FastAPI()
+
+# setup metrics
+setup_metrics(app)
 
 @app.on_event("startup")
 async def startup_span():
