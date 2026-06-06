@@ -7,18 +7,17 @@ services:
     container_name: fastapi
     ports:
       - "8000:8000"
+    volumes:
+      - fastapi_data:/app/assets
     networks:
       - backend
     restart: always
     depends_on:
       pgvector:
         condition: service_healthy
-
-    volumes:
-      - ../src:/app
     env_file:
       - ./env/.env.app
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000" ]
 
   # Nginx service <<uv-corn>> 
   nginx:
@@ -140,6 +139,7 @@ services:
 
 # volumes
 volumes:
+  fastapi_data:
   postgres_data:
   qdrant_storage:
   grafana_storage:

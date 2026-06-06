@@ -6,29 +6,24 @@ OPEN_API_KEY=""
 FILE_ALLOWED_TYPES=["text/plain", "application/pdf"]
 FILE_MAX_SIZE=15
 FILE_DEFAULT_CHUNK_SIZE=512000
-
-
-POSTRGRES_USERNAME="postrgres"
+POSTRGRES_USERNAME="postgres"
 POSTRGRES_PASSWORD="minirag7777"
-POSTRGRES_HOST="localhost"
+POSTRGRES_HOST="pgvector"
 POSTRGRES_PORT=5432
-POSTRGRES_MAIN_DATABASE="minrag"
+POSTRGRES_MAIN_DATABASE="minirag"
 
 
 #============================== LLM CONFIG ===============================
 GENERATION_BACKEND="OPENAI"
 EMBEDDING_BACKEND="COHERE"
-
-OPENAI_API_KEY=""
-OPENAI_API_URL_LITERAL=["https://openrouter.ai/api/v1", "http://10.255.255.254:11434/v1/"]
-OPENAI_API_URL="https://openrouter.ai/api/v1"
-COHERE_API_KEY=""
-
+OPENAI_API_KEY="sk-or-v1-"
+OPENAI_API_URL_LITERAL=["https://openrouter.", "http:/"]
+OPENAI_API_URL="https://openrouter."
+COHERE_API_KEY="cohere_"
 GENERATION_MODEL_ID_LITERAL = ["openai/gpt-oss-120b:free","qwen2.5:3b"]
 GENERATION_MODEL_ID="openai/gpt-oss-20b:free"
 EMBEDDING_MODEL_ID="embed-multilingual-light-v3.0"
 EMBEDDING_MODEL_SIZE=384
-
 INPUT_DEFAULT_MAX_CHARACTERS=384
 GENERATION_DEFAULT_MAX_TOKENS=200
 GENERATION_DEFAULT_TEMPRATURE=0.1

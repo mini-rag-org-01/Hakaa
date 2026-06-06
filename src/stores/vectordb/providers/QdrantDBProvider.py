@@ -13,6 +13,8 @@ class QdrantDBProvider(VectorDBInterface):
         self.client = None
         self.db_client = db_client
         self.distance_method = None
+        self.default_vector_size = default_vector_size
+        self.index_threshold = index_threshold
 
         if distance_method == DistanceMethodEnums.COSINE.value:
             self.distance_method = models.Distance.COSINE
@@ -37,16 +39,16 @@ class QdrantDBProvider(VectorDBInterface):
         return self.client.get_collection(collection_name=collection_name)
     
     async def delete_collection(self, collection_name: str):
-        if self.is_collection_existed(collection_name):
+        if await self.is_collection_existed(collection_name):
             return self.client.delete_collection(collection_name=collection_name)
         
     async def create_collection(self, collection_name: str, 
                                 embedding_size: int,
                                 do_reset: bool = False):
         if do_reset:
-            _ = self.delete_collection(collection_name=collection_name)
+            _ = await self.delete_collection(collection_name=collection_name)
         
-        if not self.is_collection_existed(collection_name):
+        if not await self.is_collection_existed(collection_name):
             self.logger.info(f"Creating new Qdrant collection: {collection_name}")
             _ = self.client.create_collection(
                 collection_name=collection_name,
@@ -91,13 +93,13 @@ class QdrantDBProvider(VectorDBInterface):
     
     async def insert_many(self, collection_name: str, texts: list, 
                           vectors: list, metadata: list = None, 
-                          record_ids: list = None, batch_size: int = 50):
+                          recored_ids: list = None, batch_size: int = 50):
         
         if metadata is None:
             metadata = [None] * len(texts)
 
-        if record_ids is None:
-            record_ids = list(range(0, len(texts)))
+        if recored_ids is None:
+            recored_ids = list(range(0, len(texts)))
 
         for i in range(0, len(texts), batch_size):
             batch_end = i + batch_size
@@ -105,11 +107,11 @@ class QdrantDBProvider(VectorDBInterface):
             batch_texts = texts[i:batch_end]
             batch_vectors = vectors[i:batch_end]
             batch_metadata = metadata[i:batch_end]
-            batch_record_ids = record_ids[i:batch_end]
+            batch_recored_ids = recored_ids[i:batch_end]
 
             batch_records = [
                 models.PointStruct(
-                    id=batch_record_ids[x],
+                    id=batch_recored_ids[x],
                     vector=batch_vectors[x],
                     payload={
                         "text": batch_texts[x], "metadata": batch_metadata[x]
