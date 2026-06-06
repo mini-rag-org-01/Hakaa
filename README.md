@@ -1,607 +1,232 @@
-# mini-rag-app
+# mini-RAG
 
-`mini-rag-app` is a FastAPI backend for a small retrieval-augmented generation workflow.
+A lightweight Retrieval-Augmented Generation (RAG) backend built with FastAPI.
 
-At a high level, the app does this:
+Upload documents, embed them, and query them with natural language — mini-RAG handles the full pipeline from file ingestion to LLM-generated answers.
 
-1. Upload a file into a project
-2. Save the file on disk and register it in MongoDB
-3. Split the file into chunks and store those chunks in MongoDB
-4. Embed the chunks with an LLM embedding provider
-5. Store the embeddings in Qdrant
-6. Search the Qdrant collection later by embedding a query
+---
 
-This README is updated to match the current repository layout and code paths.
+## What it does
 
-For a folder-by-folder and file-by-file breakdown of the codebase, see `ARCHITECTURE.md`.
+1. **Upload** — accept `.txt` or `.pdf` files per project
+2. **Process** — split files into overlapping text chunks stored in PostgreSQL
+3. **Index** — embed chunks using an LLM provider and store vectors in a vector DB
+4. **Search** — retrieve the most semantically similar chunks for any query
+5. **Answer** — generate a grounded answer from retrieved chunks using an LLM
 
-## Current stack
+---
 
-- Python API: FastAPI
-- App server: Uvicorn
-- Request/body validation: Pydantic
-- Async MongoDB driver: Motor
-- File I/O: `aiofiles`
-- Document loading and chunking: LangChain + PyMuPDF
-- Embedding / generation providers:
-  - OpenAI-compatible provider
-  - Cohere provider
-- Vector database: Qdrant local embedded storage
+## Stack
+
+| Layer | Technology |
+|---|---|
+| API framework | FastAPI + Uvicorn |
+| Validation | Pydantic v2 |
+| Relational DB | PostgreSQL 18 + pgvector extension |
+| Vector DB | pgvector (primary) or Qdrant (alternative) |
+| Async DB driver | SQLAlchemy async + asyncpg |
+| DB migrations | Alembic |
+| File loading | LangChain + PyMuPDF |
+| LLM providers | OpenAI-compatible (OpenRouter, Ollama) · Cohere |
+| Reverse proxy | Nginx |
+| Observability | Prometheus + Grafana + node-exporter + postgres-exporter |
+| Containerization | Docker Compose |
+
+---
 
 ## Repository layout
 
-```text
-mini-rag-app/
-├─ docker/                 # Docker Compose for MongoDB
-├─ src/
-│  ├─ controllers/         # Business logic / service layer
-│  ├─ helpers/             # App settings
-│  ├─ models/              # MongoDB access layer
-│  ├─ routes/              # FastAPI endpoints
-│  ├─ stores/              # LLM and vector DB adapters
-│  ├─ assets/
-│  │  ├─ files/            # Uploaded files grouped by project id
-│  │  └─ databases/        # Local Qdrant storage path
-│  ├─ .env.example         # Application environment template
-│  ├─ requirements.txt
-│  └─ main.py
-└─ README.md
+```
+mini-rag/
+├── docker/
+│   ├── docker-compose.yml         # full 8-service stack
+│   ├── env/                       # environment files (not committed with real keys)
+│   ├── minirag/
+│   │   ├── Dockerfile
+│   │   └── entrypoint.sh          # runs alembic then starts uvicorn
+│   ├── nginx/default.conf
+│   └── prometheus/prometheus.yml
+├── src/
+│   ├── main.py                    # FastAPI app, startup wiring
+│   ├── requirements.txt
+│   ├── controllers/               # business logic / service layer
+│   ├── helpers/config.py          # settings loader
+│   ├── models/                    # PostgreSQL models and data-access layer
+│   │   └── db_schemes/minirag/    # SQLAlchemy ORM schemas + Alembic migrations
+│   ├── routes/                    # HTTP endpoints
+│   ├── stores/
+│   │   ├── LLM/                   # generation + embedding provider abstraction
+│   │   └── vectordb/              # vector DB provider abstraction
+│   ├── utils/metrics.py           # Prometheus middleware
+│   └── assets/
+│       ├── files/                 # uploaded files (grouped by project_id)
+│       └── databases/             # local Qdrant storage (if using QDRANT backend)
+├── ARCHITECTURE.md
+├── setup_guide.md
+└── README.md
 ```
 
-## How the data flows
+---
 
-The current request lifecycle looks like this:
+## Quick start (Docker Compose)
 
-1. FastAPI receives an HTTP request in `src/routes/`
-2. The route parses path params, body payloads, and dependencies
-3. The route calls:
-   - `src/controllers/` for business logic
-   - `src/models/` for MongoDB work
-4. `src/stores/` handles external systems:
-   - embedding / generation providers
-   - Qdrant vector storage
-5. The route returns a JSON response
-
-For this codebase, the practical architecture is:
-
-`route -> controller/service -> model/repository -> database/provider -> response`
-
-## Prerequisites
-
-- Python 3.11 is the best match for the current environment used by the repo
-- Conda or Miniconda
-- Docker Desktop or Docker Engine if you want to run MongoDB with Compose
-
-## Setup
-
-### 1. Create and activate a virtual environment
-
-Example with Conda:
+### 1. Configure environment files
 
 ```bash
-conda create -n mini-rag-app python=3.11
-conda activate mini-rag-app
+cd docker/env
+
+cp .env.example.postgres         .env.postgres
+cp .env.example.postgres-exporter .env.postgres-exporter
+cp .env.example.grafana          .env.grafana
+cp .env.example.app              .env.app
 ```
 
-### 2. Install Python dependencies
+Edit each file. The most important one is `.env.app` — set your LLM provider keys and PostgreSQL credentials.
 
-Run this from `src/`:
+### 2. Start all services
 
 ```bash
-cd src
-pip install -r requirements.txt
+cd docker
+docker compose up -d --build
 ```
 
-### 3. Configure MongoDB
+### 3. Verify
 
-This project uses MongoDB for:
+```
+http://localhost/docs       → FastAPI Swagger UI
+http://localhost:9090       → Prometheus
+http://localhost:3000       → Grafana
+```
 
-- projects
-- assets
-- chunks
+For local dev setup (Windows + WSL 2 + Conda), see `setup_guide.md`.
 
-The repository already includes a Compose file for MongoDB in `docker/docker-compose.yml`.
+---
 
-Copy the Docker env template:
+## API overview
+
+Base URL: `http://localhost/api/v1` (via Nginx) or `http://localhost:8000/api/v1` (direct)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Health check — returns app name and version |
+| `POST` | `/data/upload/{project_id}` | Upload a file into a project |
+| `POST` | `/data/process/{project_id}` | Split uploaded file(s) into chunks |
+| `POST` | `/nlp/index/push/{project_id}` | Embed chunks and push into vector DB |
+| `GET` | `/nlp/index/info/{project_id}` | Get vector collection metadata |
+| `POST` | `/nlp/index/search/{project_id}` | Semantic search over indexed chunks |
+| `POST` | `/nlp/index/answer/{project_id}` | Full RAG: retrieve + generate answer |
+
+---
+
+## End-to-end pipeline example
 
 ```bash
-cd ../docker
-cp .env.example .env
-```
+# 1. Upload
+curl -X POST "http://localhost/api/v1/data/upload/1" \
+  -F "file=@/path/to/document.txt"
 
-Example values:
-
-```env
-MONGO_INITDB_ROOT_USERNAME=admin
-MONGO_INITDB_ROOT_PASSWORD=admin
-```
-
-Then start MongoDB:
-
-```bash
-docker compose up -d
-```
-
-If you run the command from somewhere else, point Docker Compose to the file explicitly:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-```
-
-### 4. Configure the application env
-
-Copy the application env template:
-
-```bash
-cd ../src
-cp .env.example .env
-```
-
-Then fill in the provider keys and model names you want to use.
-
-Important:
-
-- `GENERATION_BACKEND` supports:
-  - `OPENAI`
-  - `COHERE`
-- `EMBEDDING_BACKEND` supports:
-  - `OPENAI`
-  - `COHERE`
-- `VECTOR_DB_BACKEND` currently supports:
-  - `QDRANT`
-
-### 5. Run the API server
-
-From `src/`:
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 5000
-```
-
-Base URL:
-
-```text
-http://127.0.0.1:5000
-```
-
-## Startup lifecycle
-
-At startup, `src/main.py` does the following:
-
-1. Loads settings from `.env`
-2. Connects to MongoDB
-3. Creates the generation provider
-4. Creates the embedding provider
-5. Creates the vector DB provider
-6. Connects the Qdrant local client
-7. Creates a template parser using language settings
-
-Shared app-level objects are stored on the FastAPI app instance and later accessed from routes through `request.app`, for example:
-
-- `request.app.db_client`
-- `request.app.generation_client`
-- `request.app.embedding_client`
-- `request.app.vectordb_client`
-
-## API flow: end-to-end pipeline
-
-The intended pipeline is:
-
-1. `POST /api/v1/data/upload/{project_id}`
-2. `POST /api/v1/data/process/{project_id}`
-3. `POST /api/v1/nlp/index/push/{project_id}`
-4. `POST /api/v1/nlp/index/search/{project_id}`
-
-### Step 1: Upload a file
-
-Endpoint:
-
-```http
-POST /api/v1/data/upload/{project_id}
-```
-
-Purpose:
-
-- ensure the project exists in MongoDB
-- validate the uploaded file
-- write the file to disk under `src/assets/files/<project_id>/`
-- create an asset record in MongoDB
-
-Request:
-
-- `multipart/form-data`
-- field name must be exactly `file`
-
-Example with `curl`:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/data/upload/1" \
-  -F "file=@/absolute/path/to/wiki.txt"
-```
-
-Typical response:
-
-```json
-{
-  "signal": "file_uploaded_success",
-  "file_id": "randomkey_wiki.txt",
-  "asset_id": "..."
-}
-```
-
-What happens internally:
-
-- route: `src/routes/data.py::upload_data`
-- Mongo access:
-  - `ProjectModel.create_instance()`
-  - `ProjectModel.get_project_or_create_one()`
-  - `AssetModel.create_instance()`
-  - `AssetModel.create_asset()`
-- business logic:
-  - `DataController.validate_uploaded_file()`
-  - `DataController.generate_unique_filepath()`
-  - `ProjectController.get_project_path()`
-
-### Step 2: Process file(s) into chunks
-
-Endpoint:
-
-```http
-POST /api/v1/data/process/{project_id}
-```
-
-Purpose:
-
-- load the uploaded asset records from MongoDB
-- read the physical file from disk
-- split the file into chunks
-- store those chunks in MongoDB
-
-Example request:
-
-```json
-{
-  "file_id": "randomkey_wiki.txt",
-  "chunk_size": 100,
-  "overlap_size": 20,
-  "do_reset": 1
-}
-```
-
-Example `curl`:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/data/process/1" \
+# 2. Process (chunk)
+curl -X POST "http://localhost/api/v1/data/process/1" \
   -H "Content-Type: application/json" \
-  -d "{\"file_id\":\"randomkey_wiki.txt\",\"chunk_size\":100,\"overlap_size\":20,\"do_reset\":1}"
-```
+  -d '{"file_id":"<returned_file_id>","chunk_size":1000,"overlap_size":100,"do_reset":1}'
 
-Current behavior:
-
-- if `file_id` is provided, it processes one file
-- if `file_id` is omitted, it tries to process all project files
-
-What happens internally:
-
-- route: `src/routes/data.py::process_endpoint`
-- Mongo access:
-  - `ProjectModel.get_project_or_create_one()`
-  - `AssetModel.get_asset_record()` or `AssetModel.get_all_project_assets()`
-  - `ChunkModel.delete_chunks_by_project_id()`
-  - `ChunkModel.insert_many_chunks()`
-- business logic:
-  - `ProcessController.get_file_content()`
-  - `ProcessController.process_file_content()`
-
-Document loading:
-
-- `.txt` -> `TextLoader`
-- `.pdf` -> `PyMuPDFLoader`
-
-Chunking:
-
-- handled by `RecursiveCharacterTextSplitter`
-
-Typical response:
-
-```json
-{
-  "signal": "iinsert into vectordb success ",
-  "inserted_chunks": 42,
-  "processed_files": 1
-}
-```
-
-Note:
-
-That success signal name is misleading in the current code. This endpoint stores chunks in MongoDB; it does not index vectors yet.
-
-### Step 3: Push chunks into Qdrant
-
-Endpoint:
-
-```http
-POST /api/v1/nlp/index/push/{project_id}
-```
-
-Purpose:
-
-- fetch project chunks from MongoDB
-- generate embeddings for those chunks
-- create a per-project Qdrant collection if needed
-- upsert vectors into Qdrant
-
-Example request:
-
-```json
-{
-  "do_reset": 1
-}
-```
-
-Example `curl`:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/nlp/index/push/1" \
+# 3. Index (embed + store vectors)
+curl -X POST "http://localhost/api/v1/nlp/index/push/1" \
   -H "Content-Type: application/json" \
-  -d "{\"do_reset\":1}"
-```
+  -d '{"do_reset":1}'
 
-What happens internally:
-
-- route: `src/routes/nlp.py::index_project`
-- Mongo access:
-  - `ProjectModel.get_project_or_create_one()`
-  - `ChunkModel.get_poject_chunks()`
-- business logic:
-  - `NLPController.index_into_vector_db()`
-- provider calls:
-  - embedding provider: `embed_texts(...)`
-  - vector DB provider: `create_collection(...)`
-  - vector DB provider: `insert_many(...)`
-
-Collection naming:
-
-- Qdrant collection name is built as:
-
-```text
-collection_<project_id>
-```
-
-Batching:
-
-The current code uses batched embedding in `NLPController.index_into_vector_db()` so that one page of chunk texts is embedded in a single provider call. This helps reduce API calls, especially when using a trial Cohere key.
-
-Typical response:
-
-```json
-{
-  "signal": "iinsert into vectordb success ",
-  "inseerted_item_count": 42
-}
-```
-
-### Step 4: Inspect vector collection info
-
-Endpoint:
-
-```http
-GET /api/v1/nlp/index/info/{project_id}
-```
-
-Purpose:
-
-- read the Qdrant collection metadata for the project collection
-
-Example:
-
-```bash
-curl "http://127.0.0.1:5000/api/v1/nlp/index/info/1"
-```
-
-Internal path:
-
-- route: `src/routes/nlp.py::get_project_index_info`
-- controller: `NLPController.get_vector_db_collection_info()`
-- vector provider: `QdrantDBProvider.get_collection_info()`
-
-Current caveat:
-
-This route currently returns a raw Qdrant object inside `JSONResponse`. That object should be converted to a JSON-safe dict before returning it, for example with `model_dump()` or `dict()` depending on the installed Qdrant client version.
-
-### Step 5: Search the vector index
-
-Endpoint:
-
-```http
-POST /api/v1/nlp/index/search/{project_id}
-```
-
-Purpose:
-
-- embed the query text
-- search the project Qdrant collection
-- return retrieved chunk candidates
-
-Example request:
-
-```json
-{
-  "text": "Who is Sherlock Holmes?",
-  "limit": 5
-}
-```
-
-Example `curl`:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/nlp/index/search/1" \
+# 4. Ask a question
+curl -X POST "http://localhost/api/v1/nlp/index/answer/1" \
   -H "Content-Type: application/json" \
-  -d "{\"text\":\"Who is Sherlock Holmes?\",\"limit\":5}"
+  -d '{"text":"What is this document about?","limit":5}'
 ```
 
-Internal path:
+---
 
-- route: `src/routes/nlp.py::search_index`
-- controller: `NLPController.search_vector_db_collection()`
-- provider:
-  - embedding provider -> query embedding
-  - Qdrant provider -> `search_by_vector()`
+## LLM provider options
 
-Typical response:
+### Generation
 
-```json
-{
-  "signal": "VECTORDB_SEARCH_SUCCESS",
-  "RESULTS": [
-    {
-      "score": 0.92,
-      "text": "..."
-    }
-  ]
-}
-```
+| Provider | `GENERATION_BACKEND` | Notes |
+|---|---|---|
+| OpenRouter | `OPENAI` | Remote API, no local install, set `OPENAI_API_URL=https://openrouter.ai/api/v1` |
+| Ollama | `OPENAI` | Local models, set `OPENAI_API_URL=http://host.docker.internal:11434/v1/` |
+| Cohere | `COHERE` | Set `COHERE_API_KEY` |
 
-## Storage model
+### Embedding
 
-This app uses three different storage layers.
+| Provider | `EMBEDDING_BACKEND` | Notes |
+|---|---|---|
+| Cohere | `COHERE` | `embed-multilingual-light-v3.0` supports 100+ languages |
+| OpenAI | `OPENAI` | `text-embedding-3-small` (size 1536) or `text-embedding-3-large` |
 
-### 1. Files on disk
+---
 
-Uploaded files are stored under:
+## Vector DB options
 
-```text
-src/assets/files/<project_id>/
-```
+| Backend | `VECTOR_DB_BACKEND` | Notes |
+|---|---|---|
+| pgvector | `PGVECTOR` | Runs inside the PostgreSQL container, no extra service needed |
+| Qdrant | `QDRANT` | Separate Qdrant container, stores local files under `src/assets/databases/` |
 
-### 2. MongoDB
+The pgvector backend creates an HNSW index automatically once a collection reaches `VECTOR_DB_INDEX_THRESHOLD` rows (default 100).
 
-Current collections:
+---
 
-- `projects`
-- `assets`
-- `chunks`
+## Prompt language support
 
-### 3. Qdrant local embedded storage
+RAG prompts are localized. Templates live in `src/stores/LLM/templates/locales/`.
 
-Qdrant uses a local path built from:
+Supported languages out of the box:
 
-- `VECTOR_DB_PATH`
-- stored under `src/assets/databases/`
+- English (`en`)
+- Arabic (`ar`)
 
-So if:
+Set `PRIMARY_LANG` and `DEFAULT_LANG` in `.env` to control which templates are used.
 
-```env
-VECTOR_DB_PATH=qdrant_db
-```
+---
 
-then the local database directory becomes:
+## Observability
 
-```text
-src/assets/databases/qdrant_db
-```
+Prometheus scrapes metrics from three sources:
 
-## Current environment variables
+- FastAPI app — HTTP request counts and latencies per endpoint
+- Node Exporter — host CPU, memory, disk, network
+- Postgres Exporter — PostgreSQL connection pool, query performance, table sizes
 
-Use `src/.env.example` as the source of truth for app config.
+Import the standard Grafana dashboards (IDs `1860` for Node Exporter and `9628` for PostgreSQL) to get instant visibility.
 
-Important groups:
+---
 
-### App
+## Key configuration variables
 
-- `APP_NAME`
-- `APP_VERSION`
+| Variable | Default | Description |
+|---|---|---|
+| `POSTRGRES_HOST` | `pgvector` (Docker) | PostgreSQL host |
+| `VECTOR_DB_BACKEND` | `PGVECTOR` | `PGVECTOR` or `QDRANT` |
+| `GENERATION_BACKEND` | `OPENAI` | `OPENAI` or `COHERE` |
+| `EMBEDDING_BACKEND` | `COHERE` | `OPENAI` or `COHERE` |
+| `EMBEDDING_MODEL_SIZE` | `384` | Must match the model's actual output dimension |
+| `PRIMARY_LANG` | `en` | Prompt template language |
+| `VECTOR_DB_INDEX_THRESHOLD` | `100` | Rows needed before HNSW index is created |
 
-### File processing
+See `src/.env.example` for the full list.
 
-- `FILE_ALLOWED_TYPES`
-- `FILE_MAX_SIZE`
-- `FILE_DEFAULT_CHUNK_SIZE`
+---
 
-### MongoDB
+## Known issues
 
-- `MONGODB_URL`
-- `MONGODB_DATABASE`
+- `GENERATION_DEFAULT_TEMPRATURE` env key has a typo (matches the code — do not correct the env key without also updating `config.py`).
+- `GET /nlp/index/info/{project_id}` returns a raw provider object that needs serialization cleanup before it is fully JSON-safe.
+- The process endpoint success signal mentions "vectordb" even though this step only writes to PostgreSQL — it is misleading but harmless.
 
-### LLM / embedding
+See `Errors&Sol.txt` for specific bugs encountered and their fixes.
+See `ARCHITECTURE.md` for a full codebase breakdown.
 
-- `GENERATION_BACKEND`
-- `EMBEDDING_BACKEND`
-- `OPENAI_API_KEY`
-- `OPENAI_API_URL`
-- `COHERE_API_KEY`
-- `GENERATION_MODEL_ID`
-- `EMBEDDING_MODEL_ID`
-- `EMBEDDING_MODEL_SIZE`
-- `INPUT_DEFAULT_MAX_CHARACTERS`
-- `GENERATION_DEFAULT_MAX_TOKENS`
-- `GENERATION_DEFAULT_TEMPRATURE`
+---
 
-### Vector DB
+## Security
 
-- `VECTOR_DB_BACKEND`
-- `VECTOR_DB_PATH`
-- `VECTOR_DB_DISTANCE_METHOD`
-
-### Template language
-
-- `PRIMARY_LANG`
-- `DEFAULT_LANG`
-
-## Known caveats in the current code
-
-These are worth knowing while working with the latest repository state:
-
-1. `GET /api/v1/nlp/index/info/{project_id}` needs response serialization cleanup for the Qdrant `CollectionInfo` object.
-2. `src/models/db_schemes/project.py` currently defines `get_indexes()` twice.
-3. `src/routes/data.py` uses a success signal name for `/process` that suggests vector insertion even though the endpoint is only chunking into MongoDB.
-4. Some names still contain typos, for example:
-   - `get_poject_chunks`
-   - `inseerted_item_count`
-   - `GENERATION_DEFAULT_TEMPRATURE`
-5. Trial Cohere keys can still hit rate limits on large indexing jobs, even with batching.
-
-## Recommended request sequence for manual testing
-
-1. Health / welcome:
-
-```bash
-curl "http://127.0.0.1:5000/api/v1/"
-```
-
-2. Upload:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/data/upload/1" \
-  -F "file=@/absolute/path/to/wiki.txt"
-```
-
-3. Process:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/data/process/1" \
-  -H "Content-Type: application/json" \
-  -d "{\"file_id\":\"<returned file_id>\",\"chunk_size\":1000,\"overlap_size\":50,\"do_reset\":1}"
-```
-
-4. Index push:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/nlp/index/push/1" \
-  -H "Content-Type: application/json" \
-  -d "{\"do_reset\":1}"
-```
-
-5. Search:
-
-```bash
-curl -X POST "http://127.0.0.1:5000/api/v1/nlp/index/search/1" \
-  -H "Content-Type: application/json" \
-  -d "{\"text\":\"What is this file about?\",\"limit\":5}"
-```
-
-## Security note
-
-Do not commit real provider keys into `src/.env`.
-
-If real keys were previously stored in the repository or local screenshots/logs, rotate them before sharing the project.
+- Do not commit real API keys. Rotate any keys that appear in `.env` files before sharing this repository.
+- All `.env` files under `src/` are excluded by `.gitignore`. Files under `docker/env/` must be managed manually.
+- The Prometheus metrics endpoint is exposed at a randomized path to limit accidental public exposure.

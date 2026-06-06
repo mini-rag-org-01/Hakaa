@@ -1,959 +1,533 @@
-# Architecture Guide
+# mini-RAG — Architecture Reference
+
+> **Version:** 0.1  
+> **Stack generation:** Docker Compose · FastAPI · PostgreSQL + pgvector · Qdrant · Nginx · Prometheus · Grafana
+
+This document is the authoritative reference for how mini-RAG is structured.
+It answers two practical questions for every layer:
+
+1. *Where does this piece of functionality live?*
+2. *How does it participate in a live request?*
+
+---
+
+## 1. System-level overview
+
+```
+Browser / curl
+      │
+      ▼
+  [ Nginx :80 ]  ← reverse-proxy, SSL termination point
+      │
+      ▼
+  [ FastAPI :8000 ]  ← Uvicorn ASGI server (4 workers in Docker)
+      │
+      ├── PostgreSQL + pgvector :5432   ← relational store + vector index
+      ├── Qdrant :6333/:6334            ← optional local vector store
+      ├── Prometheus :9090              ← metrics scraping
+      └── Grafana :3000                 ← metrics dashboards
+```
+
+All services live on a single Docker bridge network named `backend`.
+They communicate by service name (e.g., `pgvector`, `fastapi`, `prometheus`).
+
+---
+
+## 2. Repository layout
+
+```
+mini-rag/
+├── docker/
+│   ├── docker-compose.yml          # full service graph
+│   ├── .env.example                # Docker-level env template
+│   ├── env/
+│   │   ├── .env.app                # FastAPI runtime config (copied to src/.env in CI)
+│   │   ├── .env.postgres           # PostgreSQL superuser credentials
+│   │   ├── .env.postgres-exporter  # postgres_exporter DSN
+│   │   └── .env.grafana            # Grafana admin credentials
+│   ├── minirag/
+│   │   ├── Dockerfile              # FastAPI image definition
+│   │   ├── entrypoint.sh           # runs alembic then starts uvicorn
+│   │   └── alembic.ini             # alembic config for the container
+│   ├── nginx/
+│   │   └── default.conf            # Nginx proxy rules
+│   └── prometheus/
+│       └── prometheus.yml          # scrape targets
+├── src/
+│   ├── main.py                     # FastAPI app entry point
+│   ├── requirements.txt
+│   ├── .env.example                # application config template
+│   ├── assets/
+│   │   ├── files/                  # uploaded files, grouped by project_id
+│   │   └── databases/              # local Qdrant embedded storage (when using QDRANT backend)
+│   ├── controllers/                # business logic / service layer
+│   ├── helpers/                    # settings loader
+│   ├── models/                     # PostgreSQL ORM + data-access layer
+│   │   └── db_schemes/minirag/     # Alembic migrations + SQLAlchemy schemas
+│   ├── routes/                     # FastAPI HTTP endpoints
+│   ├── stores/
+│   │   ├── LLM/                    # LLM + embedding provider abstraction
+│   │   └── vectordb/               # vector DB provider abstraction
+│   └── utils/
+│       └── metrics.py              # Prometheus middleware
+└── ARCHITECTURE.md
+```
+
+---
+
+## 3. Infrastructure layer — `docker/`
+
+### `docker-compose.yml`
+
+Defines eight services that run together:
+
+| Service | Image | Port(s) | Role |
+|---|---|---|---|
+| `fastapi` | built from `Dockerfile` | 8000 | ASGI app |
+| `nginx` | `nginx:stable-alpine` | 80 | Reverse proxy |
+| `pgvector` | `pgvector/pgvector:0.8.2-pg18` | 5432 | PostgreSQL + vector extension |
+| `qdrant` | `qdrant/qdrant:v1.18.2` | 6333, 6334 | Optional vector store |
+| `prometheus` | `prom/prometheus:v3.12.0` | 9090 | Metrics collection |
+| `grafana` | `grafana/grafana:11.6.15` | 3000 | Metrics dashboards |
+| `node-exporter` | `prom/node-exporter:v1.11.1` | 9100 | Host-level OS metrics |
+| `postgres-exporter` | `prometheuscommunity/postgres-exporter:v0.19.0` | 9187 | PostgreSQL metrics |
+
+`fastapi` has a `depends_on` health-check on `pgvector` so the app only starts after PostgreSQL is ready.
+
+### `docker/minirag/Dockerfile`
+
+Base image: `ghcr.io/astral-sh/uv:0.11.19-python3.11-trixie` (uv-accelerated Python 3.11).
+
+Build steps:
 
-This document explains the project architecture folder by folder and file by file, based on the current repository state.
+1. Install OS dependencies (libpq, image libs, build tools).
+2. Copy `src/requirements.txt` and install with `uv pip install --system`.
+3. Copy full `src/` tree into `/app`.
+4. Copy `alembic.ini` into the expected Alembic location.
+5. Copy and chmod `entrypoint.sh`.
 
-It is meant to answer two questions:
+`entrypoint.sh` runs `alembic upgrade head` before handing off to the `CMD` (`uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4`).
 
-1. Where does each piece of functionality live?
-2. How do the files work together during a request?
+### `docker/nginx/default.conf`
 
-## 1. Architecture in one view
+Nginx listens on port 80 and proxies all traffic to `http://fastapi:8000`.
+It forwards `X-Real-IP`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers.
+The hidden Prometheus metrics path (`/TrhBVe_m5gg2002_E5VVqS`) is also proxied.
 
-The project follows this practical flow:
+### `docker/prometheus/prometheus.yml`
 
-`FastAPI route -> controller/service -> model/repository -> storage/provider -> JSON response`
+Defines scrape targets so Prometheus pulls metrics from:
 
-The code is not strict textbook MVC. It is closer to:
+- `fastapi:8000` — application-level HTTP counters and latencies
+- `node-exporter:9100` — CPU, memory, disk, network
+- `postgres-exporter:9187` — PostgreSQL internals
 
-- `routes/` = HTTP entry points
-- `controllers/` = business logic / service layer
-- `models/` = MongoDB access layer
-- `models/db_schemes/` = data schemas
-- `stores/` = adapters for LLMs, templates, and vector DB
+---
 
-## 2. Top-level folders
+## 4. Application entry point — `src/main.py`
 
-### `docker/`
+`main.py` creates the FastAPI app, wires dependencies at startup, and registers routers.
 
-Purpose:
+### Startup sequence (`@app.on_event("startup")`)
 
-- local infrastructure for MongoDB
+1. Load `Settings` from `.env` via `get_settings()`.
+2. Build the PostgreSQL async connection string:
+   ```
+   postgresql+asyncpg://<user>:<pass>@<host>:<port>/<db>
+   ```
+3. Create SQLAlchemy `AsyncEngine` and `AsyncSession` factory (`app.db_client`).
+4. Instantiate `LLMProviderfactory` and build:
+   - `app.generation_client` — generation provider (OpenAI-compatible or Cohere)
+   - `app.embedding_client` — embedding provider (same choices)
+5. Instantiate `VectorDBProviderFactory` and build `app.vectordb_client` (PGVector or Qdrant), then call `await app.vectordb_client.connect()` which enables the `vector` PostgreSQL extension.
+6. Build `app.template_parser` with primary and fallback languages.
+7. Register Prometheus middleware via `setup_metrics(app)`.
 
-Files:
+### Shutdown (`@app.on_event("shutdown")`)
 
-- `docker-compose.yml`
-  - starts MongoDB
-  - maps port `27017`
-  - mounts persistent `mongodata`
-- `.env.example`
-  - template for Docker Mongo credentials
-- `.env`
-  - local Docker credentials for Mongo startup
-- `mongodb/`
-  - currently just a support folder for Docker-related content
+- `app.db_engine.dispose()` — closes the SQLAlchemy connection pool.
+- `await app.vectordb_client.disconnect()` — graceful teardown.
 
-### `src/`
+### Shared objects on `app`
 
-Purpose:
+Routes access these through `request.app`:
 
-- the actual application source
+| Attribute | Type | Purpose |
+|---|---|---|
+| `app.db_client` | `AsyncSession` factory | PostgreSQL sessions |
+| `app.db_engine` | `AsyncEngine` | Engine (used for disposal) |
+| `app.generation_client` | `LLMInterface` | Text generation |
+| `app.embedding_client` | `LLMInterface` | Vector embeddings |
+| `app.vectordb_client` | `VectorDBInterface` | Vector storage/search |
+| `app.template_parser` | `TemplateParser` | Localized prompt templates |
 
-Important files:
+---
 
-- `.env`
-  - local runtime configuration
-  - should stay private
-- `.env.example`
-  - safe template for required app config
-- `requirements.txt`
-  - Python dependencies
-- `main.py`
-  - FastAPI app entry point
+## 5. Settings — `src/helpers/config.py`
 
-### `datasets/`
+Defines a Pydantic `Settings` class that reads every configuration value from the `.env` file.
 
-Purpose:
+Key groups:
 
-- sample or external data used during development
+- App metadata (`APP_NAME`, `APP_VERSION`)
+- File limits (`FILE_ALLOWED_TYPES`, `FILE_MAX_SIZE`, `FILE_DEFAULT_CHUNK_SIZE`)
+- PostgreSQL (`POSTRGRES_USERNAME`, `POSTRGRES_PASSWORD`, `POSTRGRES_HOST`, `POSTRGRES_PORT`, `POSTRGRES_MAIN_DATABASE`)
+- LLM providers (`GENERATION_BACKEND`, `EMBEDDING_BACKEND`, `OPENAI_API_KEY`, `OPENAI_API_URL`, `COHERE_API_KEY`, `GENERATION_MODEL_ID`, `EMBEDDING_MODEL_ID`, `EMBEDDING_MODEL_SIZE`)
+- Generation defaults (`INPUT_DEFAULT_MAX_CHARACTERS`, `GENERATION_DEFAULT_MAX_TOKENS`, `GENERATION_DEFAULT_TEMPRATURE`)
+- Vector DB (`VECTOR_DB_BACKEND`, `VECTOR_DB_PATH`, `VECTOR_DB_DISTANCE_METHOD`, `VECTOR_DB_INDEX_THRESHOLD`)
+- Language (`PRIMARY_LANG`, `DEFAULT_LANG`)
 
-This folder is not part of the main runtime request path.
+---
 
-### `.vscode/`
+## 6. Routes — `src/routes/`
 
-Purpose:
-
-- local editor/debug settings
-
-These files are for developer tooling, not application logic.
-
-## 3. Runtime data folders inside `src/`
-
-### `src/assets/files/`
-
-Purpose:
-
-- physical uploaded files
-
-Structure:
-
-- files are grouped by `project_id`
-- for example:
-  - `src/assets/files/1/...`
-  - `src/assets/files/3/...`
-
-This is where `POST /api/v1/data/upload/{project_id}` writes uploaded files.
-
-### `src/assets/databases/`
-
-Purpose:
-
-- local embedded vector DB storage
-
-Current usage:
-
-- Qdrant writes local files here through `QdrantClient(path=...)`
-
-Example:
-
-- `src/assets/databases/qdrant_db/`
-
-## 4. Entry point
-
-### `src/main.py`
-
-Purpose:
-
-- creates the FastAPI app
-- wires shared dependencies at startup
-- registers routers
-
-What it does:
-
-1. loads settings with `get_settings()`
-2. connects to MongoDB
-3. builds LLM provider clients
-4. builds vector DB client
-5. builds template parser
-6. stores these objects on `app`
-7. includes all route modules
-
-Key shared objects attached to `app`:
-
-- `app.db_client`
-- `app.generation_client`
-- `app.embedding_client`
-- `app.vectordb_client`
-- `app.template_parser`
-
-Why it matters:
-
-- routes later access these objects through `request.app`
-
-## 5. `helpers/`
-
-Purpose:
-
-- configuration and small support utilities
-
-### `src/helpers/config.py`
-
-Purpose:
-
-- defines the `Settings` class
-- loads environment variables from `.env`
-
-Key role:
-
-- this is the central source of application configuration
-
-Used by:
-
-- `main.py`
-- controllers
-- route dependencies
-
-### `src/helpers/__init__.py`
-
-Purpose:
-
-- currently empty
-- marks the folder as a Python package
-
-## 6. `routes/`
-
-Purpose:
-
-- define HTTP endpoints
-- parse request input
-- orchestrate calls into models and controllers
-- return HTTP responses
+Routes are the HTTP entry points. They parse input, orchestrate calls into controllers and models, and return JSON.
 
 ### `src/routes/base.py`
 
-Purpose:
-
-- very small health/welcome API
-
-Main endpoint:
-
-- `GET /api/v1/`
-
-Behavior:
-
-- reads `APP_NAME` and `APP_VERSION` from settings
-- returns them as JSON
+Endpoint: `GET /api/v1/`  
+Returns `APP_NAME` and `APP_VERSION` from settings. Used as a health/welcome probe.
 
 ### `src/routes/data.py`
 
-Purpose:
+Endpoints:
 
-- file upload and chunking endpoints
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/data/upload/{project_id}` | Accept a multipart file, save to disk, register in DB |
+| `POST` | `/api/v1/data/process/{project_id}` | Split saved file into text chunks, store in DB |
 
-Main endpoints:
+**Upload path:**
+1. Validate file type and size via `DataController`.
+2. Resolve upload directory via `ProjectController.get_project_path()`.
+3. Generate unique file name via `DataController.generate_unique_filepath()`.
+4. Write file to `src/assets/files/<project_id>/` with `aiofiles`.
+5. Create a `Project` record if it does not exist.
+6. Create an `Asset` record in PostgreSQL.
 
-- `POST /api/v1/data/upload/{project_id}`
-- `POST /api/v1/data/process/{project_id}`
-
-Responsibilities:
-
-- create or load projects
-- validate uploaded files
-- save files on disk
-- create asset records in MongoDB
-- load files back from disk
-- split them into chunks
-- insert chunk records into MongoDB
-
-This file is one of the main orchestration layers in the app.
+**Process path:**
+1. Load the `Asset` record (one file or all project files).
+2. Read file from disk via `ProcessController.get_file_content()`.
+3. Split into `Document` chunks via `ProcessController.process_file_content()`.
+4. Bulk-insert `DataChunk` records into PostgreSQL via `ChunkModel`.
 
 ### `src/routes/nlp.py`
 
-Purpose:
+Endpoints:
 
-- vector indexing and search endpoints
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/nlp/index/push/{project_id}` | Embed chunks and upsert into vector DB |
+| `GET` | `/api/v1/nlp/index/info/{project_id}` | Read vector collection metadata |
+| `POST` | `/api/v1/nlp/index/search/{project_id}` | Semantic search over embedded chunks |
+| `POST` | `/api/v1/nlp/index/answer/{project_id}` | Full RAG: retrieve + generate an answer |
 
-Main endpoints:
+### `src/routes/schemes/`
 
-- `POST /api/v1/nlp/index/push/{project_id}`
-- `GET /api/v1/nlp/index/info/{project_id}`
-- `POST /api/v1/nlp/index/search/{project_id}`
+Pydantic request-body models used for validation:
 
-Responsibilities:
+- `data.py` → `ProcessRequest` (`file_id`, `chunk_size`, `overlap_size`, `do_reset`)
+- `nlp.py` → `PushRequest` (`do_reset`), `SearchRequest` (`text`, `limit`)
 
-- load project chunks from MongoDB
-- call the embedding provider
-- push embeddings into Qdrant
-- read Qdrant collection info
-- search vector collections
+---
 
-### `src/routes/__init__.py`
+## 7. Controllers — `src/controllers/`
 
-Purpose:
+The service / business logic layer. Controllers are called by routes and call models and stores.
 
-- currently empty
-- package marker for route modules
-
-## 7. `routes/schemes/`
-
-Purpose:
-
-- request-body schemas for FastAPI routes
-
-These are Pydantic models used for validation before route logic runs.
-
-### `src/routes/schemes/data.py`
-
-Contains:
-
-- `ProcessRequest`
-
-Used by:
-
-- `POST /api/v1/data/process/{project_id}`
-
-Fields:
-
-- `file_id`
-- `chunk_size`
-- `overlap_size`
-- `do_reset`
-
-### `src/routes/schemes/nlp.py`
-
-Contains:
-
-- `PushRequest`
-- `SearchRequest`
-
-Used by:
-
-- `POST /api/v1/nlp/index/push/{project_id}`
-- `POST /api/v1/nlp/index/search/{project_id}`
-
-### `src/routes/schemes/__init__.py`
-
-Purpose:
-
-- currently empty
-- package marker
-
-## 8. `controllers/`
-
-Purpose:
-
-- business logic and application-level services
-
-These files should be read as the service layer of the project.
-
-### `src/controllers/BaseController.py`
-
-Purpose:
-
-- shared controller helpers
+### `BaseController`
 
 Provides:
+- Access to `Settings` via `get_settings()`.
+- `generate_random_string()` — used for unique file name generation.
+- `get_database_path()` — resolves the local Qdrant storage path.
 
-- access to settings
-- base paths
-- random string generation
-- local database path builder
+### `ProjectController`
 
-Used by:
+`get_project_path(project_id)` — resolves and creates `src/assets/files/<project_id>/` on disk.
 
-- most other controllers
-- vector DB provider factory
+### `DataController`
 
-### `src/controllers/ProjectController.py`
+- `validate_uploaded_file(file)` — checks MIME type and size limits.
+- `get_clean_file_name(filename)` — sanitizes the original filename.
+- `generate_unique_filepath(project_id, filename)` — prepends a random prefix to prevent collisions.
 
-Purpose:
+### `ProcessController`
 
-- filesystem-level project folder management
+- `get_file_loader(file_path)` — picks `TextLoader` for `.txt`, `PyMuPDFLoader` for `.pdf`.
+- `get_file_content(asset)` — loads the file using the appropriate LangChain loader.
+- `process_file_content(content, chunk_size, overlap_size)` — splits with `RecursiveCharacterTextSplitter`.
 
-Main method:
+### `NLPController`
 
-- `get_project_path(project_id)`
+The core RAG service layer.
 
-Behavior:
+- `create_collection_name(project_id)` → `collection_<vector_size>_<project_id>`.
+- `index_into_vector_db(project, chunks, chunk_ids)` — batch-embeds chunk texts, calls `vectordb_client.insert_many()`.
+- `get_vector_db_collection_info(project)` — reads collection metadata from the vector DB.
+- `search_vector_db_collection(project, text, limit)` — embeds the query, calls `vectordb_client.search_by_vector()`, normalizes results.
+- `answer_rag_question(project, query, limit)` — retrieves relevant chunks, builds a localized prompt from templates, calls the generation client, returns `(answer, full_prompt, chat_history)`.
 
-- resolves `src/assets/files/<project_id>/`
-- creates the folder if it does not exist
+---
 
-### `src/controllers/DataController.py`
+## 8. Models — `src/models/`
 
-Purpose:
+PostgreSQL data-access layer using SQLAlchemy async sessions.
 
-- upload-related logic
+### `BaseDataModel`
 
-Main responsibilities:
+Stores `db_client` (the session factory) and settings. All model classes inherit from this.
 
-- validate file type and size
-- sanitize filenames
-- generate unique stored file names
+### `ProjectModel`
 
-Key methods:
+Collection: `projects`  
+Manages project records. Key methods: `create_instance`, `get_project_or_create_one`, `get_all_projects`.
 
-- `validate_uploaded_file()`
-- `generate_unique_filepath()`
-- `get_clean_file_name()`
+### `AssetModel`
 
-### `src/controllers/ProcessController.py`
+Collection: `assets`  
+Manages uploaded file metadata. Key methods: `create_asset`, `get_asset_record`, `get_all_project_assets`.
 
-Purpose:
+### `ChunkModel`
 
-- read stored files and split them into chunks
+Collection: `chunks`  
+Manages text chunk records. Key methods: `insert_many_chunks`, `delete_chunks_by_project_id`, `get_poject_chunks` (paginated).
 
-Main responsibilities:
+---
 
-- detect file extension
-- choose a loader (`TextLoader`, `PyMuPDFLoader`)
-- load file content
-- split content into chunk documents
+## 9. Database schemas — `src/models/db_schemes/minirag/`
 
-Key methods:
+SQLAlchemy ORM models and Alembic migration infrastructure.
 
-- `get_file_loader()`
-- `get_file_content()`
-- `process_file_content()`
+### Schemas
 
-### `src/controllers/NLPController.py`
+| File | Table | Key columns |
+|---|---|---|
+| `schemes/project.py` | `projects` | `project_id` (alphanumeric, indexed) |
+| `schemes/asset.py` | `assets` | `asset_project_id`, `asset_type`, `asset_name`, `asset_size`, `asset_config` |
+| `schemes/data_chunk.py` | `chunks` | `chunk_text`, `chunk_metadata`, `chunk_order`, `chunk_project_id`, `chunk_asset_id`, `chunk_id` (PK, used as FK in vector tables) |
+| `schemes/retrieved_document.py` | — | Output shape: `score`, `text` |
 
-Purpose:
+### Alembic migrations
 
-- handle vector indexing and retrieval logic
+- `alembic/env.py` — wires SQLAlchemy async engine into Alembic.
+- `alembic/versions/a3413f817c66_initial_commit.py` — initial schema migration creating all three tables.
 
-Main responsibilities:
+---
 
-- build project collection names
-- embed chunk text
-- create Qdrant collections
-- insert vectors into Qdrant
-- search Qdrant by embedded query
+## 10. Enums — `src/models/enums/`
 
-Key methods:
+| File | Purpose |
+|---|---|
+| `ResponseEnums.py` | `ResponseSignal` — all API signal strings (e.g., `FILE_UPLOADED_SUCCESS`) |
+| `ProcessingEnums.py` | Supported file extensions: `.txt`, `.pdf` |
+| `AssetTypeEnum.py` | Asset categories: currently `FILE` only |
+| `DataBaseEnum.py` | Collection name constants: `projects`, `chunks`, `assets` |
 
-- `create_collection_name()`
-- `index_into_vector_db()`
-- `get_vector_db_collection_info()`
-- `search_vector_db_collection()`
+---
 
-This controller is the main RAG-specific service layer.
+## 11. LLM stores — `src/stores/LLM/`
 
-### `src/controllers/__init__.py`
+Abstracts LLM and embedding providers behind a common interface.
 
-Purpose:
+### `LLMInterface` (abstract)
 
-- re-exports controller classes for cleaner imports
+Required methods:
+- `set_generation_model(model_id)`
+- `set_embedding_model(model_id, embedding_size)`
+- `generate_text(prompt, chat_history)`
+- `embed_text(text, document_type)`
+- `embed_texts(texts, document_type)` — batch variant
+- `construct_prompt(prompt, role)`
 
-## 9. `models/`
+### `LLMProviderfactory`
 
-Purpose:
+Reads `GENERATION_BACKEND` and `EMBEDDING_BACKEND` from settings and returns the matching provider instance.
 
-- MongoDB data access layer
+### `providers/OpenAIProvider.py`
 
-These files encapsulate collection access and database operations.
+OpenAI-compatible provider. Works with any endpoint that conforms to the OpenAI REST spec, including OpenRouter and Ollama. Handles single and batched embeddings.
 
-### `src/models/BaseDataModel.py`
+### `providers/CoHereProvider.py`
 
-Purpose:
+Cohere provider. Handles text truncation, `input_type` mapping (`search_document` / `search_query`), and batched embeddings to stay within trial key rate limits.
 
-- shared base class for Mongo-related model classes
+### `LLMEnums.py`
 
-Provides:
+- `LLMEnums` — provider name strings (`OPENAI`, `COHERE`)
+- `OpenAIEnums` / `CohereEnums` — role constants and attribute names
+- `DocumentTypeEnum` — `DOCUMENT` / `QUERY` used when embedding
 
-- `db_client`
-- settings access
+---
 
-### `src/models/ProjectModel.py`
+## 12. Prompt templates — `src/stores/LLM/templates/`
 
-Purpose:
+### `template_parser.py`
 
-- MongoDB access for project records
+Dynamically imports locale modules by language code. `get(group, key, vars)` returns the formatted template string.
 
-Main responsibilities:
+### `locales/en/rag.py` and `locales/ar/rag.py`
 
-- initialize the `projects` collection
-- create indexes
-- insert projects
-- fetch existing project by `project_id`
+Each locale file defines three template strings for the RAG prompt:
 
-Key methods:
+- `system_prompt` — tells the model to answer only from provided documents
+- `document_prompt` — wraps one retrieved chunk with its index
+- `footer_template` — appends the user's query at the end
 
-- `create_instance()`
-- `init_collection()`
-- `create_project()`
-- `get_project_or_create_one()`
-- `get_all_projects()`
+Arabic templates support bilingual deployments out of the box.
 
-### `src/models/AssetModel.py`
+---
 
-Purpose:
+## 13. Vector DB stores — `src/stores/vectordb/`
 
-- MongoDB access for uploaded file metadata
+### `VectorDBInterface` (abstract)
 
-Main responsibilities:
+Required methods: `connect`, `disconnect`, `is_collection_existed`, `list_all_collections`, `get_collection_info`, `create_collection`, `delete_collection`, `insert_one`, `insert_many`, `search_by_vector`.
 
-- initialize the `assets` collection
-- create indexes
-- insert asset records
-- fetch one asset by project and name
-- fetch all assets for a project
+### `VectorDBProviderFactory`
 
-Key methods:
+Reads `VECTOR_DB_BACKEND` and instantiates the matching provider:
 
-- `create_asset()`
-- `get_asset_record()`
-- `get_all_project_assets()`
+- `PGVECTOR` → `PGVectorDBProvider`
+- `QDRANT` → `QdrantDBProvider`
 
-### `src/models/ChunkModel.py`
+### `providers/PGVectorDBProvider.py`
 
-Purpose:
+Primary production backend. Uses SQLAlchemy async sessions and raw SQL with the `pgvector` extension.
 
-- MongoDB access for chunk records
+Key behaviors:
 
-Main responsibilities:
+- `connect()` — executes `CREATE EXTENSION IF NOT EXISTS vector`.
+- `create_collection(name, embedding_size, do_reset)` — creates a table with columns `id`, `text`, `vector(N)`, `metadata jsonb`, `chunk_id` (FK → `chunks`).
+- `insert_many(...)` — batched inserts (default batch size 50) using parameterized SQL.
+- `create_vector_index(collection_name, index_type)` — creates an HNSW index once the row count exceeds `VECTOR_DB_INDEX_THRESHOLD` (default 100). Uses the configured distance operator.
+- `search_by_vector(collection_name, vector, limit)` — cosine similarity search using the `<=>` pgvector operator, returns `RetrievedDocument` list sorted by descending score.
 
-- initialize the `chunks` collection
-- insert chunks one by one or in bulk
-- delete chunks by project
-- paginate chunks by project
+Distance methods supported: `cosine`, `dot`, `euclidean`.
+Index types supported: `HNSW` (default), `IVFFlat`.
 
-Key methods:
+### `providers/QdrantDBProvider.py`
 
-- `create_chunk()`
-- `insert_many_chunks()`
-- `delete_chunks_by_project_id()`
-- `get_poject_chunks()`
+Local embedded Qdrant adapter. Still available as an alternative backend. Uses `qdrant_client` with a local path for zero-dependency vector storage.
 
-### `src/models/__init__.py`
+### `VectorDBEnums.py`
 
-Purpose:
+- Provider names: `QDRANT`, `PGVECTOR`
+- Distance methods: `cosine`, `dot`, `euclidean`
+- PGVector-specific: table prefix, column names, index types, SQL distance operators
 
-- re-exports common enums used across the app
+---
 
-Current exports:
+## 14. Observability — `src/utils/metrics.py`
 
-- `ResponseSignal`
-- `ProcessingEnum`
+Adds Prometheus instrumentation via `starlette-exporter` middleware.
 
-## 10. `models/db_schemes/`
+Two metrics are collected for every HTTP request:
 
-Purpose:
+| Metric | Type | Labels |
+|---|---|---|
+| `http_requests_total` | Counter | `method`, `endpoint`, `status` |
+| `http_request_duration_seconds` | Histogram | `method`, `endpoint` |
 
-- Pydantic schemas for internal application data
+The scrape endpoint is exposed at a randomized path (`/TrhBVe_m5gg2002_E5VVqS`) to avoid accidental public exposure. Prometheus is configured to scrape this path.
 
-These are not Mongo repositories. They are typed data models used by the repository layer and controllers.
+---
 
-### `src/models/db_schemes/project.py`
+## 15. Storage model — three layers
 
-Purpose:
+| Layer | Location | Contents |
+|---|---|---|
+| Disk | `src/assets/files/<project_id>/` | Raw uploaded files |
+| PostgreSQL | `projects`, `assets`, `chunks` tables | Relational metadata and chunk text |
+| Vector DB | PGVector table or Qdrant local path | Embeddings + FKs back to `chunks` |
 
-- schema for a project document
+---
 
-Fields:
+## 16. Full request flow per endpoint
 
-- `id` mapped to Mongo `_id`
-- `project_id`
+### Upload (`POST /api/v1/data/upload/{project_id}`)
 
-Other responsibilities:
+```
+route (data.py)
+  └── DataController.validate_uploaded_file()
+  └── ProjectController.get_project_path()       → creates disk dir
+  └── DataController.generate_unique_filepath()
+  └── aiofiles.open() write                       → disk
+  └── ProjectModel.get_project_or_create_one()    → PostgreSQL
+  └── AssetModel.create_asset()                   → PostgreSQL
+  └── return JSON
+```
 
-- validates that `project_id` is alphanumeric
-- defines index metadata
+### Process (`POST /api/v1/data/process/{project_id}`)
 
-### `src/models/db_schemes/asset.py`
+```
+route (data.py)
+  └── AssetModel.get_asset_record()               → PostgreSQL
+  └── ProcessController.get_file_content()        → disk read
+  └── ProcessController.process_file_content()    → LangChain split
+  └── ChunkModel.delete_chunks_by_project_id()    → PostgreSQL (if do_reset)
+  └── ChunkModel.insert_many_chunks()             → PostgreSQL
+  └── return JSON
+```
 
-Purpose:
+### Index push (`POST /api/v1/nlp/index/push/{project_id}`)
 
-- schema for an asset document
+```
+route (nlp.py)
+  └── ChunkModel.get_poject_chunks()              → PostgreSQL (paginated)
+  └── NLPController.index_into_vector_db()
+        └── embedding_client.embed_text(batch)    → LLM API
+        └── vectordb_client.create_collection()   → PostgreSQL / Qdrant
+        └── vectordb_client.insert_many()         → PostgreSQL / Qdrant
+  └── return JSON
+```
 
-Fields:
+### Search (`POST /api/v1/nlp/index/search/{project_id}`)
 
-- `id`
-- `asset_project_id`
-- `asset_type`
-- `asset_name`
-- `asset_size`
-- `asset_config`
-- `asset_pushed_at`
+```
+route (nlp.py)
+  └── NLPController.search_vector_db_collection()
+        └── embedding_client.embed_text(query)    → LLM API
+        └── vectordb_client.search_by_vector()    → PostgreSQL / Qdrant
+  └── return JSON
+```
 
-Also defines Mongo index metadata.
+### Answer (`POST /api/v1/nlp/index/answer/{project_id}`)
 
-### `src/models/db_schemes/data_chunk.py`
+```
+route (nlp.py)
+  └── NLPController.answer_rag_question()
+        └── search_vector_db_collection()         → (see Search above)
+        └── template_parser.get("rag", ...)       → localized prompt
+        └── generation_client.generate_text()     → LLM API
+  └── return JSON {answer, full_prompt, chat_history}
+```
 
-Purpose:
+---
 
-- schema for a chunk document
+## 17. Known code issues (as of current commit)
 
-Fields:
+| Location | Issue |
+|---|---|
+| `ChunkModel.get_poject_chunks` | Typo in method name (`poject`) |
+| `NLPController.index_into_vector_db` | Response signal says "vectordb success" but endpoint only writes to PostgreSQL chunks table |
+| `routes/nlp.py::get_project_index_info` | Returns raw provider object; needs `dict()` / `model_dump()` before `JSONResponse` |
+| `models/db_schemes/minirag/schemes/project.py` | `get_indexes()` defined twice |
+| `GENERATION_DEFAULT_TEMPRATURE` env key | Typo (`TEMPRATURE`) throughout `.env` and `config.py` |
+| `docker/env/.env.app` | Contains real API keys — rotate before sharing the repository |
+| `PGVectorDBProvider.insert_one` | SQL string has a trailing comma before `)` — will raise a syntax error |
+| `PGVectorDBProvider.insert_many` | `if not metadata` guard is logically inverted; should be `if not metadata or len(metadata) == 0` |
 
-- `_id`
-- `chunk_text`
-- `chunk_metadata`
-- `chunk_order`
-- `chunk_project_id`
-- `chunk_asset_id`
+---
 
-Also defines index metadata.
+## 18. Recommended reading order for new contributors
 
-### `src/models/db_schemes/retrieved_document.py`
-
-Purpose:
-
-- normalized shape for search results returned from the vector DB layer
-
-Fields:
-
-- `score`
-- `text`
-
-### `src/models/db_schemes/__init__.py`
-
-Purpose:
-
-- re-exports the schema classes
-
-## 11. `models/enums/`
-
-Purpose:
-
-- central enum definitions used across routes, controllers, and models
-
-### `src/models/enums/ResponseEnums.py`
-
-Purpose:
-
-- defines application response signals
-
-Examples:
-
-- `FILE_UPLOADED_SUCCESS`
-- `PROCESSING_FAILED`
-- `INSERT_INTO_VECTORDB_SUCCESS`
-- `VECTORDB_SEARCH_SUCCESS`
-
-### `src/models/enums/ProcessingEnums.py`
-
-Purpose:
-
-- defines supported file extensions
-
-Current values:
-
-- `.txt`
-- `pdf`
-
-### `src/models/enums/AssetTypeEnum.py`
-
-Purpose:
-
-- defines asset categories
-
-Current value:
-
-- `FILE`
-
-### `src/models/enums/DataBaseEnum.py`
-
-Purpose:
-
-- central names for Mongo collections
-
-Current values:
-
-- `projects`
-- `chunks`
-- `assets`
-
-### `src/models/enums/__init__.py`
-
-Purpose:
-
-- currently empty
-- package marker
-
-## 12. `stores/`
-
-Purpose:
-
-- adapters for external systems and provider abstractions
-
-This folder hides provider-specific logic from the route/controller layers.
-
-### `src/stores/.env`
-
-Purpose:
-
-- local file inside the stores area
-
-Current note:
-
-- it is not part of the core application flow
-- it should not contain secrets that are meant for commit
-
-## 13. `stores/LLM/`
-
-Purpose:
-
-- LLM and embedding provider abstraction layer
-
-### `src/stores/LLM/LLMEnums.py`
-
-Purpose:
-
-- enums/constants for provider selection and provider-specific values
-
-Contains:
-
-- `LLMEnums`
-- `OpenAIEnums`
-- `CohereEnums`
-- `DocumentTypeEnum`
-
-Used by:
-
-- provider factory
-- provider implementations
-- `NLPController`
-
-### `src/stores/LLM/LLMInterface.py`
-
-Purpose:
-
-- abstract base interface for provider implementations
-
-Defines the required methods:
-
-- `set_generation_model()`
-- `set_embedding_model()`
-- `generate_text()`
-- `embed_text()`
-- `embed_texts()`
-- `construct_prompt()`
-
-### `src/stores/LLM/LLMProviderFActory.py`
-
-Purpose:
-
-- factory that builds either the OpenAI provider or the Cohere provider from settings
-
-Used at startup in `main.py`.
-
-### `src/stores/LLM/__init__.py`
-
-Purpose:
-
-- package marker
-
-## 14. `stores/LLM/providers/`
-
-Purpose:
-
-- concrete provider implementations
-
-### `src/stores/LLM/providers/OpenAIProvider.py`
-
-Purpose:
-
-- OpenAI-compatible provider for:
-  - generation
-  - embeddings
-
-Responsibilities:
-
-- hold API credentials and model ids
-- generate completions
-- generate embeddings
-- expose batched embedding helper
-
-### `src/stores/LLM/providers/CoHereProvider.py`
-
-Purpose:
-
-- Cohere provider for:
-  - generation
-  - embeddings
-
-Responsibilities:
-
-- hold API credentials and model ids
-- process/truncate text
-- generate Cohere chat outputs
-- generate single and batched embeddings
-
-This file has been the source of several integration fixes around input type handling, attribute naming, and batched embeddings.
-
-### `src/stores/LLM/providers/__init__.py`
-
-Purpose:
-
-- re-exports provider classes for the factory
-
-## 15. `stores/LLM/templates/`
-
-Purpose:
-
-- prompt template loading and localization
-
-### `src/stores/LLM/templates/template_parser.py`
-
-Purpose:
-
-- load localized template modules dynamically
-- return formatted template content by group/key
-
-Main concept:
-
-- given a language and a group name, it imports the appropriate locale file dynamically
-
-### `src/stores/LLM/templates/__init__.py`
-
-Purpose:
-
-- package marker
-
-### `src/stores/LLM/templates/locales/`
-
-Purpose:
-
-- language-specific prompt definitions
-
-#### `src/stores/LLM/templates/locales/en/rag.py`
-
-Purpose:
-
-- English RAG prompt templates
-
-Contains:
-
-- `system_prompt`
-- `document_prompt`
-- `footer_template`
-
-#### `src/stores/LLM/templates/locales/ar/rag.py`
-
-Purpose:
-
-- Arabic RAG prompt templates
-
-Contains:
-
-- Arabic equivalents of the same RAG prompt sections
-
-#### `__init__.py` files in locale folders
-
-Purpose:
-
-- package markers for dynamic imports
-
-## 16. `stores/vectordb/`
-
-Purpose:
-
-- vector database abstraction layer
-
-### `src/stores/vectordb/VectorDBEnums.py`
-
-Purpose:
-
-- defines supported vector DB providers and distance methods
-
-Current values:
-
-- provider: `QDRANT`
-- distance methods:
-  - `cosine`
-  - `dot`
-
-### `src/stores/vectordb/VectorDBInterface.py`
-
-Purpose:
-
-- abstract interface for vector DB providers
-
-Defines required operations such as:
-
-- connect
-- create collection
-- insert points
-- search by vector
-
-### `src/stores/vectordb/VectorDBProviderFactory.py`
-
-Purpose:
-
-- creates the configured vector DB provider
-
-Current behavior:
-
-- builds a `QdrantDBProvider`
-- computes the local data path using `BaseController.get_database_path()`
-
-### `src/stores/vectordb/__init__.py`
-
-Purpose:
-
-- package marker
-
-## 17. `stores/vectordb/providers/`
-
-Purpose:
-
-- concrete vector DB implementation(s)
-
-### `src/stores/vectordb/providers/QdrantDBProvider.py`
-
-Purpose:
-
-- local embedded Qdrant adapter
-
-Responsibilities:
-
-- connect/disconnect local Qdrant
-- create or delete collections
-- insert one or many points
-- search by vector
-- map raw Qdrant results into `RetrievedDocument`
-
-Current implementation detail:
-
-- uses `upsert(points=[models.PointStruct(...)])`
-
-### `src/stores/vectordb/providers/__init__.py`
-
-Purpose:
-
-- re-exports vector DB provider classes
-
-## 18. Request path by major endpoint
-
-### Upload path
-
-`routes/data.py::upload_data`
-
-1. load or create project with `ProjectModel`
-2. validate file with `DataController`
-3. generate file path with `ProjectController` + `DataController`
-4. write file to `assets/files/`
-5. insert asset metadata with `AssetModel`
-6. return JSON
-
-### Process path
-
-`routes/data.py::process_endpoint`
-
-1. load project with `ProjectModel`
-2. load asset record(s) with `AssetModel`
-3. load file content with `ProcessController`
-4. chunk the text with `ProcessController`
-5. insert chunks with `ChunkModel`
-6. return JSON
-
-### Index path
-
-`routes/nlp.py::index_project`
-
-1. load project with `ProjectModel`
-2. load paged chunks with `ChunkModel`
-3. batch embed texts with `NLPController` -> provider
-4. create collection with `QdrantDBProvider`
-5. upsert vectors with `QdrantDBProvider`
-6. return JSON
-
-### Search path
-
-`routes/nlp.py::search_index`
-
-1. load project with `ProjectModel`
-2. embed query with provider
-3. search Qdrant with `QdrantDBProvider`
-4. normalize results in `NLPController`
-5. return JSON
-
-## 19. Generated/runtime files you usually do not document line by line
-
-These exist in the repo right now but are runtime artifacts, not core source code:
-
-- `src/assets/files/...`
-- `src/assets/databases/...`
-- `src/.env`
-- `src/.vscode/...`
-
-They are important operationally, but they are not where the application logic lives.
-
-## 20. Current cleanup opportunities
-
-Some architecture-level improvements you may want later:
-
-1. Move more orchestration out of route files and into service objects
-2. Standardize naming and fix typos such as:
-   - `get_poject_chunks`
-   - `inseerted_item_count`
-   - `LLMProviderFActory`
-3. Normalize success/error signal naming
-4. Remove duplicate `get_indexes()` in `project.py`
-5. Fix Qdrant collection info serialization in `routes/nlp.py`
-6. Audit provider implementations for consistency between OpenAI and Cohere paths
-
-## 21. Best reading order for the codebase
-
-If you are trying to understand the project from scratch, read files in this order:
-
-1. `src/main.py`
-2. `src/routes/base.py`
-3. `src/routes/data.py`
-4. `src/routes/nlp.py`
-5. `src/controllers/`
-6. `src/models/`
-7. `src/stores/LLM/`
-8. `src/stores/vectordb/`
-
-That order follows the same path a real request takes through the application.
+1. `docker/docker-compose.yml` — understand the full service graph first
+2. `src/main.py` — see how the app is assembled at startup
+3. `src/helpers/config.py` — understand all configuration knobs
+4. `src/routes/data.py` and `src/routes/nlp.py` — follow the HTTP surface
+5. `src/controllers/` — understand the business logic layer
+6. `src/models/` — understand the PostgreSQL access layer
+7. `src/stores/LLM/` — understand provider abstraction
+8. `src/stores/vectordb/providers/PGVectorDBProvider.py` — the main vector backend
+9. `src/utils/metrics.py` — observability layer

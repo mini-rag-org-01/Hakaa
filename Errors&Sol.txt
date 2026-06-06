@@ -1,14 +1,772 @@
-Error1:
+========================================================================
+  mini-RAG — Errors & Solutions
+  Covers: setup, Docker, runtime bugs, code defects, provider issues,
+          observability, Git
+========================================================================
 
-file_path = os.path.join = (
-    project_dir_path,
-    file.filename
-)
- =>convert file_path to tuple 
-TypeError: expected str, bytes or os.PathLike object, not tuple
+------------------------------------------------------------------------
+ERROR 1 — docker compose down says: no configuration file provided
+------------------------------------------------------------------------
+When     : Running `docker compose down` from the wrong directory
 
-sol1: 
-file_path = os.path.join(
-    project_dir_path,
-    file.filen
-                    ############################    
+Cause:
+  Docker Compose cannot find docker-compose.yml because the command is
+  not being run from the folder that contains it.
+
+Fix:
+  Always pass the file path explicitly, or cd into the right folder first:
+
+    cd /mnt/d/projects/mini-rag/mini-rag
+    docker compose -f docker/docker-compose.yml down -v --remove-orphans
+
+  If you are not sure where the file lives:
+
+    find . -name "docker-compose.yml" -o -name "docker-compose.yaml"
+
+------------------------------------------------------------------------
+ERROR 2 — FastAPI 500 error: Illegal header value b'Bearer '
+------------------------------------------------------------------------
+Location : docker/env/.env.app
+When     : Any request that calls the Cohere client
+
+Cause:
+  COHERE_API_KEY is empty inside the FastAPI container. The Cohere client
+  builds an Authorization header as "Bearer " with no key appended.
+
+Fix:
+  Edit docker/env/.env.app:
+
+    COHERE_API_KEY=<your-real-cohere-key>
+
+  Do NOT write:
+
+    COHERE_API_KEY=Bearer <key>
+
+  Rebuild and restart:
+
+    docker compose -f docker/docker-compose.yml up -d --build
+
+  Verify the key is loaded (without printing it):
+
+    docker compose -f docker/docker-compose.yml exec fastapi sh -lc \
+      'python -c "import os; v=os.getenv(\"COHERE_API_KEY\", \"\"); print(bool(v), len(v))"'
+
+------------------------------------------------------------------------
+ERROR 3 — PostgreSQL error: Role "postrgres" does not exist
+------------------------------------------------------------------------
+When     : App startup / Alembic migrations
+
+Cause:
+  The username was misspelled as "postrgres" instead of "postgres" in an
+  env file or connection string.
+
+Fix:
+  Search for the typo across the project:
+
+    grep -R "postrgres" -n docker src
+
+  Fix the value to "postgres" everywhere it appears. Note: the variable
+  NAME POSTRGRES_USERNAME must stay as-is because the current code expects
+  that spelling — only its VALUE should be "postgres":
+
+    POSTRGRES_USERNAME="postgres"
+
+  If the wrong user was used during DB initialization, reset the volume:
+
+    docker compose -f docker/docker-compose.yml down -v --remove-orphans
+    docker compose -f docker/docker-compose.yml up -d --build
+
+------------------------------------------------------------------------
+ERROR 4 — FastAPI keeps restarting at: "Running database migrations..."
+------------------------------------------------------------------------
+Location : docker/minirag/entrypoint.sh — Alembic runs at startup
+When     : Container start
+
+Cause:
+  Alembic fails because PostgreSQL authentication, host, database name,
+  or password is wrong. The container exits and Docker restarts it in a
+  loop.
+
+Fix:
+  Check logs from both containers:
+
+    docker compose -f docker/docker-compose.yml logs --tail=100 fastapi
+    docker compose -f docker/docker-compose.yml logs --tail=100 pgvector
+
+  Cross-check that docker/env/.env.app matches docker/env/.env.postgres:
+
+    POSTRGRES_USERNAME  ==  POSTGRES_USER
+    POSTRGRES_PASSWORD  ==  POSTGRES_PASSWORD
+    POSTRGRES_MAIN_DATABASE  ==  POSTGRES_DB
+    POSTRGRES_HOST      ==  pgvector   (Docker service name, not localhost)
+
+------------------------------------------------------------------------
+ERROR 5 — Postman returns 500 Internal Server Error
+------------------------------------------------------------------------
+When     : Any API call from Postman
+
+Cause:
+  The request reached FastAPI but the app crashed internally. Postman
+  only shows the status code — the real cause is in Docker logs.
+
+Fix:
+  Read FastAPI logs:
+
+    docker compose -f docker/docker-compose.yml logs --tail=150 fastapi
+
+  For JSON request bodies, make sure Postman sends the correct header:
+
+    Content-Type: application/json
+
+  For POST /api/v1/nlp/index/push/{project_id}, the body must be:
+
+    { "do_reset": 1 }
+
+------------------------------------------------------------------------
+ERROR 6 — TypeError: expected str, bytes or os.PathLike object, not tuple
+------------------------------------------------------------------------
+Location : src/controllers/DataController.py (or routes/data.py)
+When     : POST /api/v1/data/upload/{project_id}
+
+Cause:
+  os.path.join() was written with an extra `= ` that turned the call into
+  a tuple assignment:
+
+    file_path = os.path.join = (
+        project_dir_path,
+        file.filename
+    )
+
+Fix:
+  Remove the rogue `= ` so os.path.join is called correctly:
+
+    file_path = os.path.join(
+        project_dir_path,
+        file.filename
+    )
+
+------------------------------------------------------------------------
+ERROR 7 — AttributeError: type object 'Project' has no attribute 'project_id'
+------------------------------------------------------------------------
+Location : src/controllers/NLPController.py
+           Methods: create_collection_name, index_into_vector_db,
+                    reset_vector_db_collection, get_vector_db_collection_info
+When     : POST /api/v1/nlp/index/push/{project_id}
+
+Cause:
+  The methods referenced `Project.project_id` (the class itself) instead
+  of `project.project_id` (the instance passed as a parameter).
+
+Fix:
+  Change every occurrence from the class reference to the instance:
+
+    # Wrong
+    collection_name = self.create_collection_name(project_id=Project.project_id)
+
+    # Correct
+    collection_name = self.create_collection_name(project_id=project.project_id)
+
+------------------------------------------------------------------------
+ERROR 8 — Cohere trial key rate limit (429 Too Many Requests)
+------------------------------------------------------------------------
+Location : src/stores/LLM/providers/CoHereProvider.py
+           src/controllers/NLPController.py
+When     : POST /api/v1/nlp/index/push/{project_id} with large documents
+
+Cause:
+  The original code embedded one chunk per API call. Cohere trial keys
+  have a strict per-minute request limit. Many chunks exhaust the quota
+  quickly.
+
+Fix:
+  Use batched embedding — send the whole page of chunk texts in one call:
+
+    # Wrong — one call per chunk
+    for chunk in chunks:
+        vector = self.embedding_client.embed_text(text=chunk.chunk_text, ...)
+
+    # Correct — one call per page batch
+    texts = [c.chunk_text for c in chunks]
+    vectors = self.embedding_client.embed_text(text=texts, document_type=...)
+
+  embed_text accepts a list as well as a single string. This reduces API
+  calls from N to ceil(N / page_size).
+
+------------------------------------------------------------------------
+ERROR 9 — API says file type not supported
+------------------------------------------------------------------------
+Location : src/helpers/config.py — FILE_ALLOWED_TYPES
+When     : POST /api/v1/data/upload/{project_id}
+
+Cause:
+  The uploaded file MIME type is not in FILE_ALLOWED_TYPES.
+
+Fix:
+  Supported types are:
+
+    text/plain
+    application/pdf
+
+  Update docker/env/.env.app if needed:
+
+    FILE_ALLOWED_TYPES=["text/plain", "application/pdf"]
+
+  Then restart FastAPI.
+
+------------------------------------------------------------------------
+ERROR 10 — Search returns VECTORDB_SEARCH_ERROR or empty results
+------------------------------------------------------------------------
+When     : POST /api/v1/nlp/index/search/{project_id}
+
+Cause:
+  The project has not been processed or indexed yet, or the collection
+  was reset without re-indexing.
+
+Fix:
+  Always run the full pipeline in order:
+
+    1. POST /api/v1/data/upload/{project_id}
+    2. POST /api/v1/data/process/{project_id}
+    3. POST /api/v1/nlp/index/push/{project_id}
+    4. POST /api/v1/nlp/index/search/{project_id}
+
+------------------------------------------------------------------------
+ERROR 11 — PGVector collection has wrong vector size
+------------------------------------------------------------------------
+Location : src/stores/vectordb/providers/PGVectorDBProvider.py
+When     : After changing EMBEDDING_MODEL_SIZE
+
+Cause:
+  The vector column size is fixed at table creation time. If
+  EMBEDDING_MODEL_SIZE changes after the table already exists, new
+  embeddings have a different dimension and inserts fail.
+
+Fix:
+  Reset the vector data for the affected project with do_reset:
+
+    POST /api/v1/nlp/index/push/{project_id}
+    Body: { "do_reset": 1 }
+
+  If the database is in a bad state, reset volumes entirely:
+
+    docker compose -f docker/docker-compose.yml down -v --remove-orphans
+    docker compose -f docker/docker-compose.yml up -d --build
+
+------------------------------------------------------------------------
+ERROR 12 — Qdrant error: upload_records does not exist
+------------------------------------------------------------------------
+Location : src/stores/vectordb/providers/QdrantDBProvider.py
+When     : Using the QDRANT backend
+
+Cause:
+  Some qdrant-client versions removed the upload_records method.
+
+Fix:
+  Use upsert with PointStruct instead:
+
+    client.upsert(points=[models.PointStruct(...)])
+
+  The current QdrantDBProvider already uses upsert. If you see this
+  error, make sure you are running the latest version of QdrantDBProvider
+  from this repository and not an older cached copy.
+
+------------------------------------------------------------------------
+ERROR 13 — SyntaxError in insert_one SQL (trailing comma)
+------------------------------------------------------------------------
+Location : src/stores/vectordb/providers/PGVectorDBProvider.py
+           Method: insert_one
+When     : Calling insert_one
+
+Cause:
+  The INSERT SQL has a trailing comma before the closing parenthesis and
+  a missing closing parenthesis on VALUES:
+
+    f'{PgVectorTableSChemeEnums.CHUNK_ID.value}, '   ← trailing comma
+    ')'
+    f'VALUES (:text, :vector, :metadata, :chunk_id'  ← no closing )
+
+Fix:
+
+    f'{PgVectorTableSChemeEnums.CHUNK_ID.value} '    ← no trailing comma
+    ') '
+    f'VALUES (:text, :vector, :metadata, :chunk_id)' ← closing )
+
+------------------------------------------------------------------------
+ERROR 14 — Inverted metadata guard in insert_many causes IndexError
+------------------------------------------------------------------------
+Location : src/stores/vectordb/providers/PGVectorDBProvider.py
+           Method: insert_many
+When     : Calling insert_many with an empty or None metadata list
+
+Cause:
+  The guard is logically inverted:
+
+    if not metadata and len(metadata) == 0:
+        metadata = [] * len(texts)
+
+  `not metadata` is True when metadata IS empty (which is exactly when
+  you want to pad it). `[] * len(texts)` always returns `[]` regardless
+  of length. When metadata is None, `len(metadata)` raises TypeError.
+
+Fix:
+
+    if not metadata:
+        metadata = [{}] * len(texts)
+    elif len(metadata) != len(texts):
+        metadata = [{}] * len(texts)
+
+------------------------------------------------------------------------
+ERROR 15 — TypeError: NoneType is not iterable in answer_rag_question
+------------------------------------------------------------------------
+Location : src/controllers/NLPController.py — answer_rag_question
+           src/routes/nlp.py — answer route
+When     : Query returns no matching chunks from the vector DB
+
+Cause:
+  When retrieved_documents is None or empty, the controller returned None.
+  The route tried to unpack it as a 3-tuple (answer, full_prompt,
+  chat_history), raising TypeError.
+
+Fix:
+  Always return a consistent 3-tuple from the controller:
+
+    if not retrieved_documents or len(retrieved_documents) == 0:
+        logger.warning("No documents retrieved for query: '%s'", query)
+        return None, None, None
+
+  In the route, check before unpacking:
+
+    answer, full_prompt, chat_history = await nlp_ctrl.answer_rag_question(...)
+    if answer is None:
+        return JSONResponse({"signal": "NO_ANSWER_FOUND"}, status_code=404)
+
+------------------------------------------------------------------------
+ERROR 16 — GET /nlp/index/info returns an unserializable object
+------------------------------------------------------------------------
+Location : src/routes/nlp.py — get_project_index_info
+When     : GET /api/v1/nlp/index/info/{project_id} with Qdrant backend
+
+Cause:
+  The route passes the raw provider response directly to JSONResponse.
+  PGVectorDBProvider already returns a plain dict, but QdrantDBProvider
+  returns a CollectionInfo object that is not JSON-serializable.
+
+Fix:
+
+    collection_info = await nlp_ctrl.get_vector_db_collection_info(project)
+    if hasattr(collection_info, "model_dump"):
+        collection_info = collection_info.model_dump()
+    elif hasattr(collection_info, "dict"):
+        collection_info = collection_info.dict()
+    return JSONResponse(content=collection_info)
+
+------------------------------------------------------------------------
+ERROR 17 — Duplicate get_indexes() definition in project.py
+------------------------------------------------------------------------
+Location : src/models/db_schemes/minirag/schemes/project.py
+When     : Not a runtime error — a maintenance/linting issue
+
+Cause:
+  get_indexes() is defined twice in the Project class. Python silently
+  uses the last definition; the first is dead code.
+
+Fix:
+  Remove the first (duplicate) definition and keep only the final one.
+
+------------------------------------------------------------------------
+ERROR 18 — ServerSelectionTimeoutError: localhost:27017 Connection refused
+------------------------------------------------------------------------
+When     : App startup (leftover from an older MongoDB-based version)
+
+Cause:
+  Leftover MONGODB_URL config in .env or a Motor client import in main.py
+  from before the stack was migrated to PostgreSQL.
+
+Fix:
+  Remove any MONGODB_URL references from .env and main.py.
+  The current connection string format is:
+
+    postgresql+asyncpg://<user>:<pass>@<host>:<port>/<db>
+
+  If you still see this, verify the PostgreSQL container is running and
+  POSTRGRES_* variables are correct (host = "pgvector" in Docker,
+  "localhost" for local dev).
+
+------------------------------------------------------------------------
+ERROR 19 — openai.APIConnectionError: Connection error
+------------------------------------------------------------------------
+When     : Any request that calls the LLM provider
+
+Cause A: Ollama is not running.
+  Fix: Start Ollama (Windows tray icon or `ollama serve`).
+
+Cause B: OPENAI_API_URL points to localhost inside Docker.
+  Inside a Docker container, `localhost` is the container itself, not
+  the host machine. Ollama on Windows is not reachable at localhost
+  from within Docker.
+
+  Fix for Docker Compose:
+    OPENAI_API_URL="http://host.docker.internal:11434/v1/"
+
+  Fix for local dev:
+    OPENAI_API_URL="http://localhost:11434/v1/"
+
+Cause C: OpenRouter API key is invalid or expired.
+  Fix: Generate a new key at https://openrouter.ai and update OPENAI_API_KEY.
+
+------------------------------------------------------------------------
+ERROR 20 — docker: command not found (inside WSL)
+------------------------------------------------------------------------
+When     : Running `docker compose` inside a WSL terminal
+
+Cause:
+  Docker Desktop's WSL integration is not enabled for your distro.
+
+Fix:
+  1. Open Docker Desktop → Settings → Resources → WSL Integration.
+  2. Toggle ON "Enable integration with my default WSL distro".
+  3. Toggle ON your specific distro (e.g., Ubuntu).
+  4. Click "Apply & Restart".
+  5. Close and reopen your WSL terminal.
+  6. Verify: `docker --version` should return a version string.
+
+------------------------------------------------------------------------
+ERROR 21 — open //./pipe/dockerDesktopLinuxEngine: system cannot find file
+------------------------------------------------------------------------
+When     : Any docker command in WSL
+
+Cause:
+  Docker Desktop is not running on the Windows side.
+
+Fix:
+  Open Docker Desktop from the Windows Start menu and wait for the green
+  "Engine running" status before running any docker command.
+
+------------------------------------------------------------------------
+ERROR 22 — 500 Internal Server Error from Docker API
+------------------------------------------------------------------------
+When     : docker compose up or other docker commands
+
+Cause:
+  Docker Desktop is in a bad state — common after sleep/wake cycles or
+  Windows updates.
+
+Fix:
+  Right-click the Docker Desktop tray icon → "Restart Docker Desktop".
+  Wait for the green "Engine running" status.
+
+------------------------------------------------------------------------
+ERROR 23 — Alembic can't find the database on first run
+------------------------------------------------------------------------
+Location : src/models/db_schemes/minirag/alembic.ini
+When     : Running `alembic upgrade head` for local dev
+
+Cause:
+  alembic.ini sqlalchemy.url still points to a placeholder or the wrong
+  host (e.g., localhost when the DB is in Docker).
+
+Fix (option 1 — read from settings dynamically in alembic/env.py):
+
+    from helpers.config import get_settings
+    settings = get_settings()
+    config.set_main_option(
+        "sqlalchemy.url",
+        f"postgresql+asyncpg://{settings.POSTRGRES_USERNAME}:{settings.POSTRGRES_PASSWORD}"
+        f"@{settings.POSTRGRES_HOST}:{settings.POSTRGRES_PORT}/{settings.POSTRGRES_MAIN_DATABASE}"
+    )
+
+Fix (option 2 — edit alembic.ini directly for local dev):
+
+    sqlalchemy.url = postgresql+asyncpg://postgres:your_password@localhost:5432/minirag
+
+Inside the container:
+
+    docker compose -f docker/docker-compose.yml exec fastapi sh -lc \
+      "cd /app/models/db_schemes/minirag && alembic upgrade head"
+
+------------------------------------------------------------------------
+ERROR 24 — Alembic config not found inside the container
+------------------------------------------------------------------------
+Location : docker/minirag/Dockerfile — COPY alembic.ini step
+When     : Container start / entrypoint.sh
+
+Cause:
+  The Dockerfile did not copy alembic.ini to the expected path, so the
+  entrypoint cannot find it.
+
+Fix:
+  Confirm the Dockerfile includes:
+
+    COPY docker/minirag/alembic.ini /app/models/db_schemes/minirag/alembic.ini
+
+  Then rebuild:
+
+    docker compose -f docker/docker-compose.yml up -d --build
+
+------------------------------------------------------------------------
+ERROR 25 — HNSW index not created even after indexing many chunks
+------------------------------------------------------------------------
+Location : src/stores/vectordb/providers/PGVectorDBProvider.py
+           Method: create_vector_index
+When     : After insert_many completes
+
+Cause:
+  The index is only created when row count exceeds VECTOR_DB_INDEX_THRESHOLD
+  (default 100). Small test documents never reach this threshold so no
+  index is built. This is correct — pgvector recommends sequential scan
+  over HNSW for small collections.
+
+Fix:
+  This is not a bug. For testing with small datasets, lower the threshold:
+
+    VECTOR_DB_INDEX_THRESHOLD=10
+
+  For production, keep it at 100 or higher.
+
+------------------------------------------------------------------------
+ERROR 26 — NLTK resource not found
+------------------------------------------------------------------------
+Location : Any controller or store that uses NLTK tokenization
+When     : First run or in a fresh Docker container
+
+Cause:
+  NLTK data packages (e.g., punkt_tab) are not downloaded automatically.
+
+Fix:
+  Add a download step to the Dockerfile or entrypoint.sh:
+
+    RUN python -c "import nltk; nltk.download('punkt_tab'); nltk.download('stopwords')"
+
+  Or run it manually inside the container:
+
+    docker compose -f docker/docker-compose.yml exec fastapi python -c \
+      "import nltk; nltk.download('punkt_tab')"
+
+------------------------------------------------------------------------
+ERROR 27 — Grafana dashboard shows "No data sources of type Loki found"
+------------------------------------------------------------------------
+When     : Importing a dashboard in Grafana
+
+Cause:
+  The imported dashboard requires Loki for log data, but Loki is not
+  included in the default Docker Compose stack.
+
+Fix (option A — use a Prometheus-only dashboard):
+  Use dashboard IDs that target Prometheus metrics only, such as:
+    1860  — Node Exporter Full
+    9628  — PostgreSQL Database
+  These work with the existing stack.
+
+Fix (option B — add Loki):
+  Add a Loki service to docker-compose.yml and configure a Loki data
+  source in Grafana. Only do this if you need log-based dashboards.
+
+------------------------------------------------------------------------
+ERROR 28 — Grafana dashboard shows N/A everywhere
+------------------------------------------------------------------------
+When     : After importing a Prometheus dashboard in Grafana
+
+Cause:
+  Prometheus has no matching metrics, or the dashboard's instance
+  variable does not match any target.
+
+Fix:
+  Check Prometheus targets:
+
+    http://localhost:9090/targets
+
+  All of these should show UP:
+    fastapi
+    postgres
+    node-exporter
+    prometheus
+
+  Test the PostgreSQL exporter directly:
+
+    curl http://localhost:9187/metrics | grep pg_up
+
+  Expected: pg_up 1
+
+  If pg_up is 0 or missing, fix docker/env/.env.postgres-exporter to
+  point to the correct host/credentials (see ERROR 29).
+
+------------------------------------------------------------------------
+ERROR 29 — PostgreSQL exporter cannot connect
+------------------------------------------------------------------------
+Location : docker/env/.env.postgres-exporter
+When     : postgres-exporter container starts
+
+Cause:
+  Wrong host, user, password, or database in the exporter config. Inside
+  Docker, the host must be the service name "pgvector", not "localhost".
+
+Fix:
+  Recommended .env.postgres-exporter content:
+
+    DATA_SOURCE_NAME=postgresql://postgres:<password>@pgvector:5432/minirag?sslmode=disable
+
+  Or using separate variables:
+
+    DATA_SOURCE_URL=pgvector:5432/minirag?sslmode=disable
+    DATA_SOURCE_USER=postgres
+    DATA_SOURCE_PASSWORD=<password>
+
+  Restart the affected services:
+
+    docker compose -f docker/docker-compose.yml up -d --build postgres-exporter prometheus
+
+------------------------------------------------------------------------
+ERROR 30 — node-exporter logs: error parsing file ... expected field: 9p
+------------------------------------------------------------------------
+Location : docker-compose.yml — node-exporter service
+When     : node-exporter container starts on WSL/Windows
+
+Cause:
+  WSL exposes filesystem mounts using the 9p driver. node-exporter's
+  filesystem collector cannot parse 9p mount entries.
+
+Fix:
+  The compose file already excludes 9p with:
+
+    --collector.filesystem.fs-types-exclude=...9p...
+
+  If the error persists, restart node-exporter:
+
+    docker compose -f docker/docker-compose.yml restart node-exporter
+
+  If node-exporter is not needed, stop it temporarily:
+
+    docker compose -f docker/docker-compose.yml stop node-exporter
+
+------------------------------------------------------------------------
+ERROR 31 — Prometheus cannot scrape FastAPI metrics
+------------------------------------------------------------------------
+Location : docker/prometheus/prometheus.yml
+When     : Prometheus shows the fastapi target as DOWN
+
+Cause:
+  Wrong metrics path or wrong service target in prometheus.yml. The
+  FastAPI metrics endpoint is at a randomized path, not /metrics.
+
+Fix:
+  The Prometheus job for FastAPI must include the custom path:
+
+    - job_name: "fastapi"
+      static_configs:
+        - targets: ["fastapi:8000"]
+      metrics_path: "/TrhBVe_m5gg2002_E5VVqS"
+
+  Restart Prometheus after editing:
+
+    docker compose -f docker/docker-compose.yml restart prometheus
+
+------------------------------------------------------------------------
+ERROR 32 — Cannot access the API via localhost (port 80)
+------------------------------------------------------------------------
+When     : Hitting http://localhost in the browser or curl
+
+Cause:
+  Either Nginx is not running, or FastAPI is unhealthy and Nginx has
+  no upstream to proxy to.
+
+Fix:
+  Check all container statuses and logs:
+
+    docker compose -f docker/docker-compose.yml ps
+    docker compose -f docker/docker-compose.yml logs --tail=100 nginx
+    docker compose -f docker/docker-compose.yml logs --tail=100 fastapi
+
+  You can reach FastAPI directly without Nginx at:
+
+    http://localhost:8000
+
+  Once FastAPI is healthy, Nginx at port 80 should also work.
+
+------------------------------------------------------------------------
+ERROR 33 — Git push rejected: non-fast-forward
+------------------------------------------------------------------------
+When     : `git push -u origin main`
+
+Cause:
+  GitHub has commits that your local branch does not have (e.g., a
+  README or license created on GitHub after you cloned or initialized
+  the repository).
+
+Fix:
+  Pull first, then push:
+
+    git pull origin main --allow-unrelated-histories --no-rebase
+    git push -u origin main
+
+  If README.md has a conflict and you want to keep your local version:
+
+    git checkout --ours README.md
+    git add README.md
+    git commit -m "Resolve README merge conflict"
+    git push -u origin main
+
+------------------------------------------------------------------------
+ERROR 34 — Accidentally added env files to Git
+------------------------------------------------------------------------
+When     : `git status` or `git log` shows .env files tracked
+
+Cause:
+  Real env files were added to Git before .gitignore was configured
+  to exclude them.
+
+Fix:
+  Remove them from Git tracking without deleting from disk:
+
+    git rm --cached \
+      docker/env/.env.app \
+      docker/env/.env.postgres \
+      docker/env/.env.grafana \
+      docker/env/.env.postgres-exporter \
+      src/.env 2>/dev/null
+
+    git add .gitignore
+    git commit -m "Remove local env files from git tracking"
+
+  Verify nothing sensitive is still tracked:
+
+    git ls-files | grep -E "(^|/)\.env|docker/env/\.env|src/\.env"
+
+  Important: rotate any keys that were ever committed before this fix.
+
+------------------------------------------------------------------------
+ERROR 35 — Accidentally deleted Docker volumes with rm -rf
+------------------------------------------------------------------------
+When     : Trying to reset containers but running rm -rf on the wrong path
+
+Cause:
+  The intent was to remove Docker data (volumes), not project source files.
+
+Fix (to reset Docker data without touching source files):
+
+    docker compose -f docker/docker-compose.yml down -v --remove-orphans
+
+  Do NOT run `rm -rf docker/` unless you intend to delete the Compose
+  and Dockerfile configuration from the repository.
+
+------------------------------------------------------------------------
+TYPOS IN THE CODEBASE (not errors, but worth knowing)
+------------------------------------------------------------------------
+
+The following typos exist in the current code. They are listed here so
+you do not accidentally fix only one side of a name and break other
+references. When correcting, update every occurrence together: config.py,
+.env.example, .env files, and all calling code.
+
+  Variable / method name          Correct spelling
+  ------------------------------  --------------------------
+  GENERATION_DEFAULT_TEMPRATURE   GENERATION_DEFAULT_TEMPERATURE
+  POSTRGRES_*                     POSTGRES_*
+  get_poject_chunks               get_project_chunks
+  inseerted_item_count            inserted_item_count
+  LLMProviderFActory.py           LLMProviderFactory.py
+  lnaguage= (in template_parser)  language=
+  recored_id / recored_ids        record_id / record_ids
+
+========================================================================
+END OF Errors & Solutions
+========================================================================
