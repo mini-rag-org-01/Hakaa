@@ -64,6 +64,7 @@ services:
     networks:
       - backend
     restart: always
+    # Qdrant's Docker image includes an exporter.
 
   # prometheus minitoring
   prometheus:
@@ -103,22 +104,18 @@ services:
   # node exporrter  for system metrics
   node-exporter:
     image: prom/node-exporter:v1.11.1
-    container_name: minirag-node-exporter
+    container_name: node-exporter
     ports:
       - "9100:9100"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /var/run:/var/run:rw
     command:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
-      - "--path.rootfs=/host/rootfs"
-      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
-      - "--collector.filesystem.fs-types-exclude=^(9p|autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|pstore|rpc_pipefs|securityfs|sysfs|tracefs)$$"
+      - "--no-collector.filesystem"
       - "--no-collector.netstat"
       - "--no-collector.softnet"
-
     networks:
       - backend
     restart: always

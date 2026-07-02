@@ -1,0 +1,56 @@
+[
+  {
+    "project_id": 1,
+    "display_name": "AI",
+    "original_filename": "02 ai.txt",
+    "file_id": "s0sc3h87rseb_02ai.txt",
+    "size_bytes": 47070,
+    "mime_type": "text/plain",
+    "chunk_size": 250,
+    "overlap_size": 20,
+    "auto_indexed": true,
+    "status": "ready",
+    "created_at": "2026-07-02 19:26:34",
+    "upload_response": {
+      "signal": "file_uploaded_success",
+      "file_id": "s0sc3h87rseb_02ai.txt",
+      "asset_id": "3"
+    }
+  },
+  {
+    "project_id": 2,
+    "display_name": "Egyptian",
+    "original_filename": "03 egyptHistory.txt",
+    "file_id": "xhu5jrb3c0dq_03egyptHistory.txt",
+    "size_bytes": 37576,
+    "mime_type": "text/plain",
+    "chunk_size": 350,
+    "overlap_size": 20,
+    "auto_indexed": true,
+    "status": "ready",
+    "created_at": "2026-07-02 19:34:02",
+    "upload_response": {
+      "signal": "file_uploaded_success",
+      "file_id": "xhu5jrb3c0dq_03egyptHistory.txt",
+      "asset_id": "4"
+    }
+  },
+  {
+    "project_id": 3,
+    "display_name": "lang",
+    "original_filename": "01 langProc.txt",
+    "file_id": "lxjkpvclmyi7_01langProc.txt",
+    "size_bytes": 20844,
+    "mime_type": "text/plain",
+    "chunk_size": 300,
+    "overlap_size": 20,
+    "auto_indexed": true,
+    "status": "ready",
+    "created_at": "2026-07-02 20:08:19",
+    "upload_response": {
+      "signal": "file_uploaded_success",
+      "file_id": "lxjkpvclmyi7_01langProc.txt",
+      "asset_id": "5"
+    }
+  }
+]

@@ -13,11 +13,11 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
 
         # Process the request
-        response = await call_next(request)
+        response = await call_next(request)   # call endpoint func (process/upload/..)
 
         # Record metrics after request is processed
         duration = time.time() - start_time
-        endpoint = request.url.path
+        endpoint = request.url.path # endpint name
 
         REQUEST_LATENCY.labels(method=request.method, endpoint=endpoint).observe(duration)
         REQUEST_COUNT.labels(method=request.method, endpoint=endpoint, status=response.status_code).inc()

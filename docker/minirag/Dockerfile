@@ -1,5 +1,6 @@
 FROM ghcr.io/astral-sh/uv:0.11.19-python3.11-trixie
 WORKDIR /app
+
 ENV PYTHONPATH=/app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -15,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     libxslt1-dev \
     libffi-dev \
+    gcc \
     unzip \
     zip \
     curl \
