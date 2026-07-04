@@ -33,11 +33,11 @@ def get_database_url() -> str:
 
     return URL.create(
         drivername="postgresql+psycopg",
-        username=settings.POSTRGRES_USERNAME,
-        password=settings.POSTRGRES_PASSWORD,
-        host=settings.POSTRGRES_HOST,
-        port=settings.POSTRGRES_PORT,
-        database=settings.POSTRGRES_MAIN_DATABASE,
+        username=settings.POSTGRES_USERNAME,
+        password=settings.POSTGRES_PASSWORD,
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
+        database=settings.POSTGRES_MAIN_DATABASE,
     ).render_as_string(hide_password=False)
 
 

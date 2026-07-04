@@ -1,0 +1,9 @@
+src/.env
+src/.env.*
+**/.env
+**/.env.*
+.git
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -1,3 +1,17 @@
+---
+title: Mini RAG
+emoji: 🔎
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+# Mini RAG
+
+FastAPI mini RAG application with Supabase pgvector.
+
 # mini-RAG
 
 A lightweight Retrieval-Augmented Generation (RAG) backend built with FastAPI.

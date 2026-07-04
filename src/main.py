@@ -23,7 +23,7 @@ setup_metrics(app)
 async def startup_span():
     settings = get_settings()
     # create conniction 
-    postgres_conn = f"postgresql+asyncpg://{settings.POSTRGRES_USERNAME}:{settings.POSTRGRES_PASSWORD}@{settings.POSTRGRES_HOST}:{settings.POSTRGRES_PORT}/{settings.POSTRGRES_MAIN_DATABASE}"
+    postgres_conn = f"postgresql+asyncpg://{settings.POSTGRES_USERNAME}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_MAIN_DATABASE}"
 
     app.db_engine = create_async_engine(postgres_conn)
 
