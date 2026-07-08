@@ -1,2 +1,5 @@
 datasets
 streamlit-ui/uploads_registry.jsondatasets/
+src/assets/databases/qdrant_db/
+src/assets/databases/
+qdrant_db/
