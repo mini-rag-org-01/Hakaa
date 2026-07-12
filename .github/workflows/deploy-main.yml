@@ -17,7 +17,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_MAIN_HOST_IP }}
-          username: gihub_user
+          username: github_user
           key: ${{ secrets.SSH_MAIN_PRIVATE_KEY }}
           script: |
             cd /home/github_user/workspace/mini-rag
