@@ -6,11 +6,11 @@ OPEN_API_KEY=""
 FILE_ALLOWED_TYPES=["text/plain", "application/pdf"]
 FILE_MAX_SIZE=15
 FILE_DEFAULT_CHUNK_SIZE=512000
-POSTRGRES_USERNAME="postgres"
-POSTRGRES_PASSWORD="minirag7777"
-POSTRGRES_HOST="pgvector"
-POSTRGRES_PORT=5432
-POSTRGRES_MAIN_DATABASE="minirag"
+POSTGRES_USERNAME="postgres"
+POSTGRES_PASSWORD="minirag7777"
+POSTGRES_HOST="pgvector"
+POSTGRES_PORT=5432
+POSTGRES_MAIN_DATABASE="minirag"
 
 
 #============================== LLM CONFIG ===============================

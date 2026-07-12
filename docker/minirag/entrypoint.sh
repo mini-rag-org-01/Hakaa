@@ -12,4 +12,5 @@ if [ "$#" -eq 0 ]; then
     set -- uvicorn main:app --host 0.0.0.0 --port 8000
 fi
 
+echo "Starting FastApi application"
 exec "$@"
