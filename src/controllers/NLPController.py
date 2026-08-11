@@ -1,6 +1,8 @@
 from .BaseController import BaseController
 from models.db_schemes.minirag.schemes import Project, DataChunk
 from stores.LLM.LLMEnums import DocumentTypeEnum
+import asyncio
+from cohere.errors import TooManyRequestsError
 from typing import List
 import logging
 
@@ -29,34 +31,60 @@ class NLPController(BaseController):
           collection_info = await self.vectordb_client.get_collection_info(collection_name=collection_name)
           return collection_info
  
-     async def index_into_vector_db(self, project:Project, chunks: List[DataChunk], 
-                              chunks_ids : List[int]):
-          # Bug: using `Project.project_id` raised `AttributeError: project_id`.
-          # Fix: derive the collection name from the current project instance.
-          collection_name = self.create_collection_name(project_id=project.project_id)
+     async def index_into_vector_db(
+     self,
+     project: Project,
+     chunks: List[DataChunk],
+     chunks_ids: List[int],
+     ):
+          collection_name = self.create_collection_name(
+               project_id=project.project_id
+          )
 
-          # 2. manage items 
           texts = [c.chunk_text for c in chunks]
           metadata = [c.chunk_metadata for c in chunks]
-          # Bug: embedding one chunk per API call quickly hits Cohere's trial limit.
-          # Fix: send the whole page of chunk texts in a single batched embed request.
-          vectors = self.embedding_client.embed_text (
-               text=texts,
-               document_type=DocumentTypeEnum.DOCUMENT.value
-          )
+
+          vectors = None
+          max_attempts = 5
+
+          for attempt in range(1, max_attempts + 1):
+               try:
+                    vectors = self.embedding_client.embed_text(
+                         text=texts,
+                         document_type=DocumentTypeEnum.DOCUMENT.value,
+                    )
+                    break
+
+               except TooManyRequestsError:
+                    if attempt == max_attempts:
+                         logger.exception(
+                              "Cohere rate limit persisted after %d attempts",
+                              max_attempts,
+                         )
+                         raise
+
+                    logger.warning(
+                         "Cohere rate limit reached. Waiting 65 seconds "
+                         "before retry %d/%d",
+                         attempt + 1,
+                         max_attempts,
+                    )
+                    await asyncio.sleep(65)
+
           if not vectors or len(vectors) != len(texts):
+               logger.error(
+                    "Embedding count mismatch: expected %d vectors",
+                    len(texts),
+               )
                return False
 
-          # The route prepares the collection once before paging starts.
-          # Recreating it here would reset the table on every batch when `do_reset=True`.
           return await self.vectordb_client.insert_many(
                collection_name=collection_name,
                texts=texts,
                vectors=vectors,
                metadata=metadata,
-               recored_ids = chunks_ids,
+               recored_ids=chunks_ids,
           )
-     
      async def search_vector_db_collection(self, project: Project, text: str, limit: int=10):
           query_vector = None
           collection_name = self.create_collection_name(project_id=project.project_id)
