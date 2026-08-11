@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11100e">
+  <title>حكّاء التاريخ</title>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap');
+
+    :root {
+      --bg: #0f0e0c;
+      --panel: rgba(25, 23, 19, 0.88);
+      --panel-light: rgba(255, 255, 255, 0.055);
+      --gold: #d2a85b;
+      --gold-light: #f0d090;
+      --text: #f5eee1;
+      --muted: #aaa093;
+      --border: rgba(210, 168, 91, 0.22);
+      --danger: #d96b6b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      color: var(--text);
+      font-family: "Tajawal", sans-serif;
+      background:
+        radial-gradient(circle at 10% 10%, rgba(167, 112, 49, 0.22), transparent 30%),
+        radial-gradient(circle at 90% 85%, rgba(92, 61, 31, 0.28), transparent 34%),
+        linear-gradient(135deg, #0d0c0a, #181510 50%, #0c0b09);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.07;
+      background-image:
+        linear-gradient(30deg, #d2a85b 1px, transparent 1px),
+        linear-gradient(150deg, #d2a85b 1px, transparent 1px);
+      background-size: 70px 120px;
+    }
+
+    .app {
+      position: relative;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      height: 100vh;
+      max-width: 1500px;
+      margin: auto;
+    }
+
+    aside {
+      display: flex;
+      flex-direction: column;
+      padding: 24px 18px;
+      background: rgba(12, 11, 9, 0.86);
+      border-left: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    .brand-icon {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      font-size: 25px;
+      background: linear-gradient(145deg, #d3a95e, #795326);
+      border: 1px solid var(--gold);
+      border-radius: 15px;
+      box-shadow: 0 8px 30px rgba(210, 168, 91, 0.2);
+    }
+
+    .brand h1 {
+      margin: 0;
+      color: var(--gold-light);
+      font-family: "Amiri", serif;
+      font-size: 23px;
+    }
+
+    .brand small {
+      color: var(--muted);
+    }
+
+    .new-chat {
+      width: 100%;
+      padding: 13px;
+      color: var(--text);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--panel-light);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      transition: 0.2s;
+    }
+
+    .new-chat:hover {
+      color: var(--gold-light);
+      background: rgba(210, 168, 91, 0.12);
+      border-color: var(--gold);
+      transform: translateY(-1px);
+    }
+
+    .side-info {
+      margin-top: 30px;
+    }
+
+    .side-title {
+      margin: 0 4px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .feature {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 8px 0;
+      padding: 10px;
+      color: #c9c0b3;
+      font-size: 13px;
+      border-radius: 10px;
+    }
+
+    .feature span {
+      color: var(--gold);
+    }
+
+    .status {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: auto;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      background: var(--panel-light);
+      border: 1px solid rgba(255,255,255,.06);
+      border-radius: 12px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #64c487;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #64c487;
+    }
+
+    main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 72px;
+      padding: 14px 28px;
+      background: rgba(15, 14, 12, 0.62);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar h2 {
+      margin: 0;
+      font-family: "Amiri", serif;
+      font-size: 21px;
+    }
+
+    .topbar p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .library-badge {
+      padding: 8px 12px;
+      color: var(--gold-light);
+      font-size: 12px;
+      background: rgba(210, 168, 91, 0.1);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+    }
+
+    #chat {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 22px;
+      overflow-y: auto;
+      padding: 30px max(5%, 24px);
+      scroll-behavior: smooth;
+    }
+
+    #welcome {
+      width: min(760px, 100%);
+      margin: auto;
+      text-align: center;
+      animation: appear 0.6s ease;
+    }
+
+    .hero-symbol {
+      display: grid;
+      width: 82px;
+      height: 82px;
+      margin: 0 auto 18px;
+      place-items: center;
+      font-size: 38px;
+      background: linear-gradient(145deg, rgba(210,168,91,.22), rgba(210,168,91,.06));
+      border: 1px solid var(--border);
+      border-radius: 25px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.35);
+    }
+
+    #welcome h2 {
+      margin: 0;
+      color: var(--gold-light);
+      font-family: "Amiri", serif;
+      font-size: clamp(32px, 5vw, 49px);
+      line-height: 1.3;
+    }
+
+    #welcome > p {
+      max-width: 600px;
+      margin: 12px auto 28px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .suggestions {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .suggestion {
+      padding: 16px;
+      color: #ded4c5;
+      font: inherit;
+      text-align: right;
+      cursor: pointer;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      transition: .22s;
+    }
+
+    .suggestion:hover {
+      color: var(--gold-light);
+      background: rgba(210,168,91,.09);
+      border-color: var(--border);
+      transform: translateY(-3px);
+    }
+
+    .message-row {
+      display: flex;
+      gap: 12px;
+      width: min(850px, 100%);
+      animation: appear .3s ease;
+    }
+
+    .message-row.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .message-row.bot {
+      align-self: flex-start;
+    }
+
+    .avatar {
+      display: grid;
+      flex: 0 0 38px;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      background: #242019;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .message {
+      padding: 14px 17px;
+      line-height: 1.9;
+      white-space: pre-wrap;
+      border-radius: 16px;
+      box-shadow: 0 9px 30px rgba(0,0,0,.14);
+    }
+
+    .message-row.user .message {
+      color: #17120c;
+      background: linear-gradient(135deg, #e0bd78, #bd8a3e);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message-row.bot .message {
+      background: rgba(255,255,255,.055);
+      border: 1px solid rgba(255,255,255,.08);
+      border-bottom-right-radius: 4px;
+    }
+
+    .sources {
+      margin-top: 12px;
+      padding-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid rgba(255,255,255,.1);
+    }
+
+    .typing {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      min-height: 50px;
+    }
+
+    .typing i {
+      width: 7px;
+      height: 7px;
+      background: var(--gold);
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+
+    .typing i:nth-child(2) { animation-delay: .15s; }
+    .typing i:nth-child(3) { animation-delay: .3s; }
+
+    .composer-wrap {
+      padding: 14px max(5%, 24px) 20px;
+      background: linear-gradient(transparent, rgba(12,11,9,.92) 35%);
+    }
+
+    .composer {
+      display: flex;
+      width: min(900px, 100%);
+      margin: auto;
+      padding: 7px;
+      background: rgba(32, 29, 24, .96);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: 0 15px 50px rgba(0,0,0,.35);
+    }
+
+    #question {
+      flex: 1;
+      min-width: 0;
+      padding: 13px 15px;
+      color: var(--text);
+      font: inherit;
+      background: transparent;
+      border: 0;
+      outline: 0;
+    }
+
+    #question::placeholder {
+      color: #7f776d;
+    }
+
+    #sendButton {
+      display: grid;
+      flex: 0 0 48px;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      color: #21170d;
+      font-size: 21px;
+      cursor: pointer;
+      background: linear-gradient(145deg, #e1bf78, #a87432);
+      border: 0;
+      border-radius: 13px;
+      transition: .2s;
+    }
+
+    #sendButton:hover {
+      transform: scale(1.04);
+    }
+
+    #sendButton:disabled {
+      cursor: wait;
+      opacity: .55;
+    }
+
+    .note {
+      margin: 8px 0 0;
+      color: #756e65;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    @keyframes appear {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes bounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: .45; }
+      30% { transform: translateY(-6px); opacity: 1; }
+    }
+
+    @media (max-width: 780px) {
+      .app { display: block; }
+      aside { display: none; }
+      .topbar { min-height: 62px; padding: 10px 16px; }
+      .library-badge { display: none; }
+      #chat { padding: 22px 14px; }
+      .composer-wrap { padding: 10px 10px 14px; }
+      .suggestions { grid-template-columns: 1fr; }
+      .suggestion { padding: 13px; }
+      #welcome h2 { font-size: 34px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">
+        <div class="brand-icon">𓂀</div>
+        <div>
+          <h1>حكّاء التاريخ</h1>
+          <small>مكتبتك التاريخية الذكية</small>
+        </div>
+      </div>
+
+      <button class="new-chat" id="newChat">＋ محادثة جديدة</button>
+
+      <div class="side-info">
+        <p class="side-title">ما الذي يقدمه حكّاء التاريخ؟</p>
+        <div class="feature"><span>◈</span> البحث داخل الكتب التاريخية</div>
+        <div class="feature"><span>◈</span> إجابات مبنية على المصادر</div>
+        <div class="feature"><span>◈</span> عرض المراجع المستخدمة</div>
+      </div>
+
+      <div class="status">
+        <span class="status-dot"></span>
+        النظام جاهز لاستقبال أسئلتك
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <h2>اسأل التاريخ</h2>
+          <p>رحلة معرفية عبر الأحداث والحضارات والشخصيات</p>
+        </div>
+        <div class="library-badge">📚 المصادر التاريخية</div>
+      </header>
+
+      <section id="chat">
+        <div id="welcome">
+          <div class="hero-symbol">📜</div>
+          <h2>لكل عصرٍ حكاية</h2>
+          <p>
+            اسأل عن حدث أو شخصية أو حضارة، وسيبحث حكّاء التاريخ
+            داخل المصادر المتاحة ليقدم لك إجابة موثقة وواضحة.
+          </p>
+
+          <div class="suggestions">
+            <button class="suggestion">حدثني عن قيام الدولة العباسية</button>
+            <button class="suggestion">ما أسباب سقوط الدولة الأموية؟</button>
+            <button class="suggestion">من هو صلاح الدين الأيوبي؟</button>
+            <button class="suggestion">كيف كانت الحياة في مصر القديمة؟</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="composer-wrap">
+        <form class="composer" id="chatForm">
+          <input
+            id="question"
+            type="text"
+            placeholder="اكتب سؤالك التاريخي..."
+            autocomplete="off"
+            required
+          >
+          <button id="sendButton" type="submit" aria-label="إرسال">➤</button>
+        </form>
+        <p class="note">قد تحتاج المعلومات المهمة إلى مراجعة المصدر الأصلي.</p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const chat = document.getElementById("chat");
+    const welcome = document.getElementById("welcome");
+    const form = document.getElementById("chatForm");
+    const input = document.getElementById("question");
+    const sendButton = document.getElementById("sendButton");
+    const newChatButton = document.getElementById("newChat");
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.textContent = value;
+      return div.innerHTML;
+    }
+
+    function addMessage(text, type, sources = []) {
+      const row = document.createElement("div");
+      row.className = `message-row ${type}`;
+
+      const avatar = document.createElement("div");
+      avatar.className = "avatar";
+      avatar.textContent = type === "user" ? "أنت" : "📜";
+
+      const message = document.createElement("div");
+      message.className = "message";
+      message.innerHTML = escapeHtml(text);
+
+      if (sources.length) {
+        const sourceBox = document.createElement("div");
+        sourceBox.className = "sources";
+        sourceBox.innerHTML =
+          "<strong>المصادر:</strong><br>" +
+          sources.map((source, index) =>
+            `${index + 1}. ${escapeHtml(String(source.title || source.name || source))}`
+          ).join("<br>");
+
+        message.appendChild(sourceBox);
+      }
+
+      row.append(avatar, message);
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
+      return row;
+    }
+
+    function addTyping() {
+      const row = document.createElement("div");
+      row.className = "message-row bot";
+      row.innerHTML = `
+        <div class="avatar">📜</div>
+        <div class="message typing">
+          <i></i><i></i><i></i>
+        </div>
+      `;
+      chat.appendChild(row);
+      chat.scrollTop = chat.scrollHeight;
+      return row;
+    }
+
+    async function askQuestion(question) {
+      if (!question || sendButton.disabled) return;
+
+      if (welcome) welcome.style.display = "none";
+
+      addMessage(question, "user");
+      input.value = "";
+      input.focus();
+      sendButton.disabled = true;
+
+      const typing = addTyping();
+
+      try {
+        const response = await fetch("/api/v1/nlp/index/answer/1", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: question,
+            limit: 5
+          })
+        });
+
+        const data = await response.json();
+        typing.remove();
+
+        if (!response.ok) {
+          throw new Error(data.detail || data.signal || "فشل الاتصال بالخدمة");
+        }
+
+        const answer =
+          typeof data.answer === "string"
+            ? data.answer
+            : data.answer?.text || data.response || data.message;
+
+        if (!answer) {
+          throw new Error("لم تصل إجابة صالحة من الخدمة");
+        }
+
+        const sources =
+          data.sources ||
+          data.references ||
+          data.documents ||
+          [];
+
+        addMessage(answer, "bot", Array.isArray(sources) ? sources : []);
+      } catch (error) {
+        typing.remove();
+        addMessage(
+          "عذرًا، تعذر الحصول على إجابة الآن. تأكد من تشغيل خدمة البحث ثم حاول مرة أخرى.",
+          "bot"
+        );
+        console.error(error);
+      } finally {
+        sendButton.disabled = false;
+        input.focus();
+      }
+    }
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      askQuestion(input.value.trim());
+    });
+
+    document.querySelectorAll(".suggestion").forEach(button => {
+      button.addEventListener("click", () => askQuestion(button.textContent.trim()));
+    });
+
+    newChatButton.addEventListener("click", () => {
+      chat.querySelectorAll(".message-row").forEach(element => element.remove());
+      welcome.style.display = "block";
+      input.value = "";
+      input.focus();
+    });
+  </script>
+</body>
+</html>

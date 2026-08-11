@@ -23,7 +23,8 @@ jobs:
             cd /home/github_user/workspace/mini-rag
             git checkout main
             git pull
-            sudo systemctl restart minirag.service
+            cd /home/github_user/workspace/mini-rag/docker
+            docker compose up -d --build --remove-orphans
             echo "Waiting..."
             sleep 20
 

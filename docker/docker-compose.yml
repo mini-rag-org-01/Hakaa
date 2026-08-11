@@ -19,7 +19,7 @@ services:
       - ./env/.env.app
     command: [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000" ]
 
-  # Nginx service <<uv-corn>> 
+  # Nginx service <<uv-corn>>
   nginx:
     image: nginx:stable-alpine3.23-perl
     container_name: nginx
@@ -27,13 +27,14 @@ services:
       - "80:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/html:/usr/share/nginx/html:ro
     networks:
       - backend
     restart: always
     depends_on:
       - fastapi
 
-  # postgresql 
+  # postgresql
   pgvector:
     image: pgvector/pgvector:0.8.2-pg18-trixie
     container_name: pgvector
@@ -85,7 +86,7 @@ services:
       - "--web.console.libraries=/etc/prometheus/console_libraries"
       - "--web.console.templates=/etc/prometheus/consoles"
 
-  # grafana Dashboard  
+  # grafana Dashboard
   grafana:
     image: grafana/grafana:11.6.15-ubuntu
     container_name: grafana
