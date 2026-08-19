@@ -33,12 +33,12 @@ jobs:
 
             cd docker
 
-            test -s certbot/conf/live/hakaa.publicvm.com/fullchain.pem
-            test -s certbot/conf/live/hakaa.publicvm.com/privkey.pem
-            test -s nginx/auth/.htpasswd
-
             docker compose config -q
             docker compose up -d --build --remove-orphans
+
+            test -s /etc/letsencrypt/live/hakaa.publicvm.com/fullchain.pem &&
+            test -s /etc/letsencrypt/live/hakaa.publicvm.com/privkey.pem &&
+            test -s /etc/nginx/.htpasswd
 
             docker compose exec -T nginx nginx -t
             docker compose exec -T nginx nginx -s reload
