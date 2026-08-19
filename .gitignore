@@ -1,5 +1,13 @@
-datasets
-streamlit-ui/uploads_registry.jsondatasets/
+datasets/
+streamlit-ui/uploads_registry.json
 src/assets/databases/qdrant_db/
 src/assets/databases/
 qdrant_db/
+
+# Local deployment secrets and runtime files
+docker/certbot/
+docker/nginx/auth/
+
+# Local deployment backups
+docker/docker-compose.yml.bak-*
+docker/nginx/default.conf.bak-*
