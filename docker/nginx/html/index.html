@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#11100e">
-  <title>حكّاء التاريخ</title>
+  <title>حكّاء</title>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Tajawal:wght@400;500;700&display=swap');
@@ -437,7 +437,7 @@
       <div class="brand">
         <div class="brand-icon">𓂀</div>
         <div>
-          <h1>حكّاء التاريخ</h1>
+          <h1>حكّاء</h1>
           <small>مكتبتك التاريخية الذكية</small>
         </div>
       </div>
@@ -445,7 +445,7 @@
       <button class="new-chat" id="newChat">＋ محادثة جديدة</button>
 
       <div class="side-info">
-        <p class="side-title">ما الذي يقدمه حكّاء التاريخ؟</p>
+        <p class="side-title">ما الذي يقدمه حكّاء؟</p>
         <div class="feature"><span>◈</span> البحث داخل الكتب التاريخية</div>
         <div class="feature"><span>◈</span> إجابات مبنية على المصادر</div>
         <div class="feature"><span>◈</span> عرض المراجع المستخدمة</div>
@@ -571,7 +571,7 @@
       const typing = addTyping();
 
       try {
-        const response = await fetch("/api/v1/nlp/index/answer/1", {
+        const response = await fetch("/api/v1/nlp/index/answer/1001", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
