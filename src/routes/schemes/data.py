@@ -23,6 +23,6 @@ class ProcessRequest(BaseModel):
     # Fix: allow `file_id` to be omitted.
     file_id: str = None
     chunk_size: Optional[int] = 100
-    overlap_size: Optional[int] = 20
-    do_reset: Optional[int] = 0
+    chunk_size: int = Field(default=400, gt=0)
+    overlap_size: int = Field(default=60, ge=0)
 
