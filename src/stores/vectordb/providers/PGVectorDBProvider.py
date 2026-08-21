@@ -259,18 +259,25 @@ class PGVectorDBProvider(VectorDBInterface):
 
         async with self.db_client() as session:
             async with session.begin():
-                search_sql = sql_text(f'SELECT {PgVectorTableSChemeEnums.TEXT.value} as text, '
-                                        f'1 - ({PgVectorTableSChemeEnums.VECTOR.value} <=> :vector) as score '
-                                       f' FROM {collection_name} '
-                                       'ORDER BY score DESC '
-                                       f'LIMIT {limit}') 
+                search_sql = sql_text(
+                    f'SELECT '
+                    f'{PgVectorTableSChemeEnums.TEXT.value} AS text, '
+                    f'{PgVectorTableSChemeEnums.METADATA.value} AS metadata, '
+                    f'{PgVectorTableSChemeEnums.CHUNK_ID.value} AS chunk_id, '
+                    f'1 - ({PgVectorTableSChemeEnums.VECTOR.value} <=> :vector) AS score '
+                    f'FROM "{collection_name}" '
+                    f'ORDER BY score DESC '
+                    f'LIMIT {limit}'
+                )
                 result = await session.execute(search_sql, {'vector': vector})
                 records = result.fetchall()
 
                 return [
                     RetrievedDocument(
                         text=record.text,
-                        score=record.score
+                        score=record.score,
+                        metadata=record.metadata or {},
+                        chunk_id=record.chunk_id,
                     )
                     for record in records
                 ]

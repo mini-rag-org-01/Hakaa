@@ -110,7 +110,7 @@ class NLPController(BaseController):
                return 
           
           return [
-               result.dict()        
+               result.model_dump()
                for result in results 
           ]
       
