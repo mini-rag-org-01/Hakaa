@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title data-i18n="pageTitle">لوحة إدارة حكّاء التاريخ</title>
+
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script src="/admin/admin.js" defer></script>
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow" data-i18n="brand">حكّاء التاريخ</p>
+      <h1 data-i18n="adminPanel">لوحة الإدارة</h1>
+    </div>
+
+    <nav>
+      <a href="/" target="_blank" data-i18n="openChat">
+        فتح واجهة الشات
+      </a>
+
+      <a
+        id="grafanaLink"
+        href="http://127.0.0.1:3000/dashboards"
+        target="_blank"
+        data-i18n="openGrafana"
+        data-i18n-title="grafanaHint"
+      >
+        فتح Grafana
+      </a>
+
+      <button id="languageToggle" type="button">
+        English
+      </button>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="hero">
+      <div>
+        <h2 data-i18n="sourceManagement">
+          إدارة المصادر والفهرسة
+        </h2>
+
+        <p data-i18n="sourceDescription">
+          ارفع المصدر، ثم سيقوم النظام بمعالجته وتقسيمه
+          وإنشاء الترميز وإضافته إلى فهرس البحث.
+        </p>
+      </div>
+
+      <div class="project-control">
+        <label for="projectId" data-i18n="selectProject">
+          اختر المشروع
+        </label>
+
+        <select id="projectId">
+          <option value="" data-i18n="loadingProjects">
+            جارٍ تحميل المشاريع...
+          </option>
+        </select>
+
+        <button
+          id="newProject"
+          type="button"
+          data-i18n="newProject"
+        >
+          مشروع جديد
+        </button>
+
+        <button
+          id="refreshStatus"
+          type="button"
+          data-i18n="refreshStatus"
+        >
+          تحديث الحالة
+        </button>
+      </div>
+    </section>
+
+    <section class="project-editor" id="projectEditor">
+      <div class="project-editor-heading">
+        <div>
+          <p class="eyebrow" data-i18n="projectManagement">
+            إدارة المشروع
+          </p>
+          <h2 id="projectEditorTitle" data-i18n="editProject">
+            بيانات المشروع
+          </h2>
+        </div>
+
+        <span id="projectNumber" class="project-number">—</span>
+      </div>
+
+      <div class="project-fields">
+        <label class="project-field">
+          <span data-i18n="projectName">اسم المشروع</span>
+          <input
+            id="projectName"
+            type="text"
+            maxlength="150"
+            required
+          >
+        </label>
+
+        <label class="project-field project-description-field">
+          <span data-i18n="projectDescription">وصف المشروع</span>
+          <textarea id="projectDescription" rows="2"></textarea>
+        </label>
+
+        <label class="project-field">
+          <span data-i18n="projectStatus">حالة المشروع</span>
+          <select id="projectStatus">
+            <option value="draft" data-i18n="statusDraft">مسودة</option>
+            <option value="processing" data-i18n="statusProcessing">
+              قيد المعالجة
+            </option>
+            <option value="ready" data-i18n="statusReady">جاهز</option>
+            <option value="failed" data-i18n="statusFailed">فشل</option>
+          </select>
+        </label>
+
+        <label class="project-public">
+          <input id="projectPublic" type="checkbox">
+          <span data-i18n="isPublic">إظهار المشروع في الشات</span>
+        </label>
+
+        <button
+          id="saveProject"
+          class="primary-button project-save"
+          type="button"
+          data-i18n="saveProject"
+        >
+          حفظ المشروع
+        </button>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="Project status">
+      <article class="metric-card">
+        <span data-i18n="apiStatus">حالة الـAPI</span>
+        <strong id="apiState" data-i18n="checking">
+          جارٍ الفحص...
+        </strong>
+      </article>
+
+      <article class="metric-card">
+        <span data-i18n="indexedRecords">
+          السجلات المفهرسة
+        </span>
+        <strong id="recordCount">—</strong>
+      </article>
+
+      <article class="metric-card">
+        <span data-i18n="operationStatus">
+          حالة العملية
+        </span>
+        <strong id="jobState" data-i18n="ready">
+          جاهز
+        </strong>
+      </article>
+    </section>
+
+    <section class="content-grid">
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow" data-i18n="addSource">
+              إضافة مصدر
+            </p>
+            <h2 data-i18n="uploadAndProcess">
+              رفع ومعالجة ملف
+            </h2>
+          </div>
+        </div>
+
+        <form id="ingestForm">
+          <label class="file-drop" for="fileInput">
+            <strong data-i18n="chooseSourceFile">
+              اختر ملف المصدر
+            </strong>
+
+            <span
+              id="selectedFileName"
+              data-i18n="clickToChoose"
+            >
+              اضغط لاختيار الملف
+            </span>
+
+            <input
+              id="fileInput"
+              name="file"
+              type="file"
+              required
+            >
+          </label>
+
+          <p class="hint" data-i18n="uploadHint">
+            الحد الأقصى للرفع 20MB. يتحقق الخادم من نوع الملف.
+          </p>
+
+          <details class="advanced-settings">
+            <summary data-i18n="advancedSettings">
+              إعدادات التقسيم المتقدمة
+            </summary>
+
+            <div class="field-grid">
+              <label>
+                <span data-i18n="chunkSize">حجم الجزء</span>
+
+                <input
+                  id="chunkSize"
+                  type="number"
+                  min="1"
+                  value="100"
+                >
+              </label>
+
+              <label>
+                <span data-i18n="overlapSize">
+                  حجم التداخل
+                </span>
+
+                <input
+                  id="overlapSize"
+                  type="number"
+                  min="0"
+                  value="20"
+                >
+              </label>
+            </div>
+
+            <p class="warning" data-i18n="resetWarning">
+              لن تستخدم الواجهة خيار Reset حفاظًا على البيانات الحالية.
+            </p>
+          </details>
+
+          <button
+            id="ingestButton"
+            class="primary-button"
+            type="submit"
+            data-i18n="startIngestion"
+          >
+            ابدأ الرفع والفهرسة
+          </button>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow" data-i18n="executionPath">
+              مسار التنفيذ
+            </p>
+            <h2 data-i18n="operationStages">
+              مراحل العملية
+            </h2>
+          </div>
+        </div>
+
+        <ol class="pipeline" id="pipeline">
+          <li data-step="upload">
+            <span>1</span>
+            <div>
+              <strong data-i18n="uploadFile">
+                رفع الملف
+              </strong>
+              <small data-i18n="waitingToStart">
+                في انتظار البدء
+              </small>
+            </div>
+          </li>
+
+          <li data-step="process">
+            <span>2</span>
+            <div>
+              <strong data-i18n="processText">
+                معالجة وتقسيم النص
+              </strong>
+              <small data-i18n="waitingForUpload">
+                في انتظار الرفع
+              </small>
+            </div>
+          </li>
+
+          <li data-step="index">
+            <span>3</span>
+            <div>
+              <strong data-i18n="createIndex">
+                إنشاء الترميز والفهرسة
+              </strong>
+              <small data-i18n="waitingForProcessing">
+                في انتظار المعالجة
+              </small>
+            </div>
+          </li>
+
+          <li data-step="verify">
+            <span>4</span>
+            <div>
+              <strong data-i18n="verifyIndex">
+                التحقق من الفهرس
+              </strong>
+              <small data-i18n="waitingForIndexing">
+                في انتظار الفهرسة
+              </small>
+            </div>
+          </li>
+        </ol>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow" data-i18n="operationLog">
+            سجل التشغيل
+          </p>
+          <h2 data-i18n="lastOperationDetails">
+            تفاصيل آخر عملية
+          </h2>
+        </div>
+
+        <button
+          id="clearLog"
+          type="button"
+          data-i18n="clearView"
+        >
+          مسح العرض
+        </button>
+      </div>
+
+      <pre id="eventLog" data-i18n="adminReady">لوحة الإدارة جاهزة.</pre>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
