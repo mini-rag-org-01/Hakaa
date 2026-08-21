@@ -1,14 +1,15 @@
+import re
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .BaseController import BaseController
 from .ProjectController import ProjectController
-import os
 from langchain_community.document_loaders import TextLoader
 from langchain_community.document_loaders import PyMuPDFLoader
 from models import ProcessingEnum
-from typing import List
 from dataclasses import dataclass
+import os
 
 @dataclass
-class Documents: 
+class Documents:
     page_content: str
     metadata: dict
 
@@ -20,11 +21,11 @@ class ProcessController(BaseController):
         self.project_id = project_id
         self.project_path = ProjectController().get_project_path(project_id = project_id)
 
-    def get_file_extention(self, file_id:str): # file_id => file name
-       return os.path.splitext(file_id)[-1]
+    def get_file_extension(self, file_id:str): # file_id => file name
+       return os.path.splitext(file_id)[-1].lower()
 
     def get_file_loader(self,file_id:str):
-        file_ext = self.get_file_extention(file_id = file_id)
+        file_ext = self.get_file_extension(file_id = file_id)
         file_path = os.path.join(
             self.project_path ,
             file_id
@@ -37,7 +38,7 @@ class ProcessController(BaseController):
 
         if file_ext == ProcessingEnum.TXT.value:
             return TextLoader(file_path, encoding = "utf-8")
-        
+
 
         elif file_ext == ProcessingEnum.PDF.value:
             return PyMuPDFLoader(file_path)
@@ -55,45 +56,94 @@ class ProcessController(BaseController):
             # Bug: unsupported extensions used to fail later in less obvious ways.
             # Fix: raise a direct validation error at the controller boundary.
             raise ValueError(f"Unsupported file type for file_id: {file_id}")
-        
+
         return loader.load()
 
 
-    def process_file_content(self, file_content: list, file_id:str,
-                            chunk_size: int = 100 , overlap_size: int=20):
-        file_content_texts = [
-            rec.page_content
-            for rec in file_content
-        ]
-        file_content_metadata = [
-            rec.metadata
-            for rec in file_content
-        ]
-        chunks = self.prosecc_simpler_splitter(
-            texts = file_content_texts,
-            metadatas=file_content_metadata,
-            chunk_size=chunk_size
+    def clean_text(self, text: str) -> str:
+        if not text:
+            return ""
+
+        text = text.replace("\u00a0", " ")
+        text = text.replace("\u200e", "")
+        text = text.replace("\u200f", "")
+
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r" *\n *", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+
+        return text.strip()
+
+
+    def process_file_content(
+        self,
+        file_content: list,
+        file_id: str,
+        chunk_size: int = 400,
+        overlap_size: int = 60,
+    ):
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than zero")
+
+        if overlap_size < 0:
+            raise ValueError("overlap_size cannot be negative")
+
+        if overlap_size >= chunk_size:
+            raise ValueError(
+                "overlap_size must be smaller than chunk_size"
             )
 
-        return chunks
-    def prosecc_simpler_splitter(self, texts: List[str], metadatas: List[dict], chunk_size: int, splitter_tag : str="\n"):
-        full_text= " ".join(texts)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=overlap_size,
+            length_function=len,
+            keep_separator="end",
+            strip_whitespace=True,
+            separators=[
+                "\n\n",
+                "\n",
+                "؟",
+                ".",
+                "،",
+                " ",
+                "",
+            ],
+        )
 
-        lines = [ doc.strip() for doc in full_text.split(splitter_tag) if len(doc.strip())> 1]
         chunks = []
-        current_chunk = ""
-        for line in lines:
-            current_chunk += splitter_tag + line
-            if len(current_chunk) >= chunk_size:
-                chunks.append(Documents(
-                    page_content=current_chunk.strip(),
-                    metadata={}
-                ))
-                current_chunk = ""
-        
-        if len(current_chunk) > 0:
-            chunks.append(Documents(
-                page_content=current_chunk.strip(),
-                metadata={}
-            ))
+
+        for page_index, record in enumerate(file_content):
+            page_text = self.clean_text(record.page_content)
+
+            if not page_text:
+                continue
+
+            metadata = dict(record.metadata or {})
+            metadata["file_id"] = file_id
+
+            loader_page = metadata.get("page")
+
+            if isinstance(loader_page, int):
+                metadata["page_number"] = loader_page + 1
+            else:
+                metadata["page_number"] = page_index + 1
+
+            page_chunks = splitter.create_documents(
+                texts=[page_text],
+                metadatas=[metadata],
+            )
+
+            for page_chunk_index, chunk in enumerate(page_chunks):
+                chunk_metadata = dict(chunk.metadata)
+                chunk_metadata["page_chunk_index"] = (
+                    page_chunk_index + 1
+                )
+
+                chunks.append(
+                    Documents(
+                        page_content=chunk.page_content.strip(),
+                        metadata=chunk_metadata,
+                    )
+                )
+
         return chunks
