@@ -22,7 +22,7 @@ class ProcessRequest(BaseModel):
     # the "process all files in the project" branch already present in the route.
     # Fix: allow `file_id` to be omitted.
     file_id: str = None
-    chunk_size: Optional[int] = 100
     chunk_size: int = Field(default=400, gt=0)
     overlap_size: int = Field(default=60, ge=0)
+    do_reset: int = Field(default=0, ge=0, le=1)
 
