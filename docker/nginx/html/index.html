@@ -202,6 +202,44 @@
       border-radius: 20px;
     }
 
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .project-picker {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      background: rgba(255,255,255,.035);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .project-picker select {
+      min-width: 190px;
+      max-width: 300px;
+      padding: 7px 10px;
+      color: var(--gold-light);
+      font: inherit;
+      background: #17130e;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      outline: 0;
+    }
+
+    .project-picker select:focus {
+      border-color: var(--gold);
+    }
+
+    .project-picker select:disabled {
+      opacity: .65;
+    }
+
     #chat {
       display: flex;
       flex: 1;
@@ -422,6 +460,10 @@
       aside { display: none; }
       .topbar { min-height: 62px; padding: 10px 16px; }
       .library-badge { display: none; }
+      .topbar-actions { width: min(58%, 300px); }
+      .project-picker { width: 100%; }
+      .project-picker label { display: none; }
+      .project-picker select { width: 100%; min-width: 0; }
       #chat { padding: 22px 14px; }
       .composer-wrap { padding: 10px 10px 14px; }
       .suggestions { grid-template-columns: 1fr; }
@@ -453,7 +495,7 @@
 
       <div class="status">
         <span class="status-dot"></span>
-        النظام جاهز لاستقبال أسئلتك
+        <span id="statusText">جارٍ تحميل المصادر...</span>
       </div>
     </aside>
 
@@ -463,7 +505,16 @@
           <h2>اسأل التاريخ</h2>
           <p>رحلة معرفية عبر الأحداث والحضارات والشخصيات</p>
         </div>
-        <div class="library-badge">📚 المصادر التاريخية</div>
+        <div class="topbar-actions">
+          <label class="project-picker" for="projectSelect">
+            <span>المصدر</span>
+            <select id="projectSelect" disabled>
+              <option value="">جارٍ تحميل المصادر...</option>
+            </select>
+          </label>
+
+          <div class="library-badge">📚 المصادر التاريخية</div>
+        </div>
       </header>
 
       <section id="chat">
@@ -489,11 +540,12 @@
           <input
             id="question"
             type="text"
-            placeholder="اكتب سؤالك التاريخي..."
+            placeholder="اختر مصدرًا أولًا..."
             autocomplete="off"
             required
+            disabled
           >
-          <button id="sendButton" type="submit" aria-label="إرسال">➤</button>
+          <button id="sendButton" type="submit" aria-label="إرسال" disabled>➤</button>
         </form>
         <p class="note">قد تحتاج المعلومات المهمة إلى مراجعة المصدر الأصلي.</p>
       </div>
@@ -507,6 +559,79 @@
     const input = document.getElementById("question");
     const sendButton = document.getElementById("sendButton");
     const newChatButton = document.getElementById("newChat");
+    const projectSelect = document.getElementById("projectSelect");
+    const statusText = document.getElementById("statusText");
+
+    function resetChat() {
+      chat.querySelectorAll(".message-row").forEach(element => element.remove());
+      welcome.style.display = "block";
+      input.value = "";
+    }
+
+    function selectedProjectId() {
+      const projectId = Number(projectSelect.value);
+      return Number.isInteger(projectId) && projectId > 0
+        ? projectId
+        : null;
+    }
+
+    async function loadProjects() {
+      try {
+        const response = await fetch("/api/v1/projects");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || data.signal || "فشل تحميل المصادر");
+        }
+
+        const projects = Array.isArray(data.projects)
+          ? data.projects
+          : [];
+
+        projectSelect.replaceChildren();
+
+        if (!projects.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "لا توجد مصادر منشورة حاليًا";
+          projectSelect.appendChild(option);
+          statusText.textContent = "لا توجد مصادر جاهزة حاليًا";
+          return;
+        }
+
+        for (const project of projects) {
+          const option = document.createElement("option");
+          option.value = String(project.project_id);
+          option.textContent = project.project_name;
+          projectSelect.appendChild(option);
+        }
+
+        const savedProjectId = localStorage.getItem("chatProjectId");
+        const savedOption = Array.from(projectSelect.options).find(
+          option => option.value === savedProjectId
+        );
+
+        if (savedOption) {
+          projectSelect.value = savedProjectId;
+        }
+
+        projectSelect.disabled = false;
+        input.disabled = false;
+        sendButton.disabled = false;
+        input.placeholder = "اكتب سؤالك التاريخي...";
+        statusText.textContent = "النظام جاهز لاستقبال أسئلتك";
+        localStorage.setItem("chatProjectId", projectSelect.value);
+        input.focus();
+      } catch (error) {
+        projectSelect.replaceChildren();
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "تعذر تحميل المصادر";
+        projectSelect.appendChild(option);
+        statusText.textContent = "تعذر الاتصال بالمصادر";
+        console.error(error);
+      }
+    }
 
     function escapeHtml(value) {
       const div = document.createElement("div");
@@ -561,17 +686,25 @@
     async function askQuestion(question) {
       if (!question || sendButton.disabled) return;
 
+      const projectId = selectedProjectId();
+
+      if (!projectId) {
+        addMessage("اختر مصدرًا قبل إرسال السؤال.", "bot");
+        return;
+      }
+
       if (welcome) welcome.style.display = "none";
 
       addMessage(question, "user");
       input.value = "";
       input.focus();
       sendButton.disabled = true;
+      projectSelect.disabled = true;
 
       const typing = addTyping();
 
       try {
-        const response = await fetch("/api/v1/nlp/index/answer/1001", {
+        const response = await fetch(`/api/v1/nlp/index/answer/${projectId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -612,6 +745,7 @@
         console.error(error);
       } finally {
         sendButton.disabled = false;
+        projectSelect.disabled = false;
         input.focus();
       }
     }
@@ -626,11 +760,19 @@
     });
 
     newChatButton.addEventListener("click", () => {
-      chat.querySelectorAll(".message-row").forEach(element => element.remove());
-      welcome.style.display = "block";
-      input.value = "";
+      resetChat();
       input.focus();
     });
+
+    projectSelect.addEventListener("change", () => {
+      if (!selectedProjectId()) return;
+
+      localStorage.setItem("chatProjectId", projectSelect.value);
+      resetChat();
+      input.focus();
+    });
+
+    loadProjects();
   </script>
 </body>
 </html>

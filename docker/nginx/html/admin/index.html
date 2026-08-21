@@ -52,16 +52,23 @@
       </div>
 
       <div class="project-control">
-        <label for="projectId" data-i18n="projectId">
-          رقم المشروع
+        <label for="projectId" data-i18n="selectProject">
+          اختر المشروع
         </label>
 
-        <input
-          id="projectId"
-          type="number"
-          min="1"
-          value="1"
+        <select id="projectId">
+          <option value="" data-i18n="loadingProjects">
+            جارٍ تحميل المشاريع...
+          </option>
+        </select>
+
+        <button
+          id="newProject"
+          type="button"
+          data-i18n="newProject"
         >
+          مشروع جديد
+        </button>
 
         <button
           id="refreshStatus"
@@ -69,6 +76,64 @@
           data-i18n="refreshStatus"
         >
           تحديث الحالة
+        </button>
+      </div>
+    </section>
+
+    <section class="project-editor" id="projectEditor">
+      <div class="project-editor-heading">
+        <div>
+          <p class="eyebrow" data-i18n="projectManagement">
+            إدارة المشروع
+          </p>
+          <h2 id="projectEditorTitle" data-i18n="editProject">
+            بيانات المشروع
+          </h2>
+        </div>
+
+        <span id="projectNumber" class="project-number">—</span>
+      </div>
+
+      <div class="project-fields">
+        <label class="project-field">
+          <span data-i18n="projectName">اسم المشروع</span>
+          <input
+            id="projectName"
+            type="text"
+            maxlength="150"
+            required
+          >
+        </label>
+
+        <label class="project-field project-description-field">
+          <span data-i18n="projectDescription">وصف المشروع</span>
+          <textarea id="projectDescription" rows="2"></textarea>
+        </label>
+
+        <label class="project-field">
+          <span data-i18n="projectStatus">حالة المشروع</span>
+          <select id="projectStatus">
+            <option value="draft" data-i18n="statusDraft">مسودة</option>
+            <option value="processing" data-i18n="statusProcessing">
+              قيد المعالجة
+            </option>
+            <option value="ready" data-i18n="statusReady">جاهز</option>
+            <option value="failed" data-i18n="statusFailed">فشل</option>
+          </select>
+        </label>
+
+        <label class="project-public">
+          <input id="projectPublic" type="checkbox">
+          <span data-i18n="isPublic">إظهار المشروع في الشات</span>
+        </label>
+
+        <button
+          id="saveProject"
+          class="primary-button project-save"
+          type="button"
+          data-i18n="saveProject"
+        >
+          حفظ المشروع
         </button>
       </div>
     </section>

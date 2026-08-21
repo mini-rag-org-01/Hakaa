@@ -6,11 +6,15 @@ from controllers import DataController, ProjectController, ProcessController
 import aiofiles
 from models import ResponseSignal
 import logging
-from .schemes.data import ProcessRequest
+from .schemes.data import (
+    ProcessRequest,
+    ProjectCreateRequest,
+    ProjectUpdateRequest,
+)
 from models.ProjectModel import ProjectModel
 from models.ChunkModel import ChunkModel
 from models.AssetModel import AssetModel
-from models.db_schemes.minirag.schemes import DataChunk, Asset
+from models.db_schemes.minirag.schemes import DataChunk, Asset, Project
 from models.enums.AssetTypeEnum import AssetTypeEnum
 from controllers import NLPController
 
@@ -21,11 +25,159 @@ data_router = APIRouter(
     tags=["api_v1", "data"],
 )
 
+@data_router.post("/projects")
+async def create_project(
+    request: Request,
+    project_request: ProjectCreateRequest,
+):
+    project_name = project_request.project_name.strip()
+
+    project_model = await ProjectModel.create_instance(
+        db_client=request.app.db_client
+    )
+
+    existing_project = await project_model.get_project_by_name(
+        project_name=project_name
+    )
+
+    if existing_project is not None:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "signal": "project name already exists"
+            },
+        )
+
+    description = project_request.project_description
+
+    if description:
+        description = description.strip() or None
+
+    project_record = Project(
+        project_name=project_name,
+        project_description=description,
+        is_public=project_request.is_public,
+    )
+
+    project = await project_model.create_project(
+        project=project_record
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={
+            "signal": "project created successfully",
+            "project": {
+                "project_id": project.project_id,
+                "project_uuid": str(project.project_uuid),
+                "project_name": project.project_name,
+                "project_description": project.project_description,
+                "is_public": project.is_public,
+                "project_status": project.project_status,
+            },
+        },
+    )
+
+
+@data_router.get("/projects")
+async def get_projects(
+    request: Request,
+    page: int = 1,
+    page_size: int = 100,
+):
+    project_model = await ProjectModel.create_instance(
+        db_client=request.app.db_client
+    )
+
+    projects, total_pages = await project_model.get_all_projects(
+        page=page,
+        page_size=page_size,
+    )
+
+    return {
+        "projects": [
+            {
+                "project_id": project.project_id,
+                "project_name": project.project_name,
+                "project_description": project.project_description,
+                "is_public": project.is_public,
+                "project_status": project.project_status,
+            }
+            for project in projects
+        ],
+        "page": page,
+        "total_pages": total_pages,
+    }
+
+@data_router.patch("/projects/{project_id}")
+async def update_project(
+    request: Request,
+    project_id: int,
+    project_request: ProjectUpdateRequest,
+):
+    project_model = await ProjectModel.create_instance(
+        db_client=request.app.db_client
+    )
+
+    project_name = project_request.project_name
+
+    if project_name is not None:
+        project_name = project_name.strip()
+
+        if not project_name:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"signal": "project name cannot be empty"},
+            )
+
+        existing_project = await project_model.get_project_by_name(
+            project_name=project_name
+        )
+
+        if (
+            existing_project is not None
+            and existing_project.project_id != project_id
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"signal": "project name already exists"},
+            )
+
+    description = project_request.project_description
+
+    if description is not None:
+        description = description.strip()
+
+    project = await project_model.update_project(
+        project_id=project_id,
+        project_name=project_name,
+        project_description=description,
+        is_public=project_request.is_public,
+        project_status=project_request.project_status,
+    )
+
+    if project is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"signal": "project not found"},
+        )
+
+    return {
+        "signal": "project updated successfully",
+        "project": {
+            "project_id": project.project_id,
+            "project_name": project.project_name,
+            "project_description": project.project_description,
+            "is_public": project.is_public,
+            "project_status": project.project_status,
+        },
+    }
+
 @data_router.post("/upload/{project_id}")
 async def upload_data(request: Request, project_id: int, file: UploadFile,
                       app_settings: Settings = Depends(get_settings)):
-        
-    
+
+
     project_model = await ProjectModel.create_instance(
         db_client=request.app.db_client
     )
@@ -138,7 +290,7 @@ async def process_endpoint(request: Request, project_id: int, process_request: P
         project_files_ids = {
             asset_record.asset_id: asset_record.asset_name
         }
-    
+
     else:
         project_files = await asset_model.get_all_project_assets(
             asset_project_id=project.project_id,
@@ -157,7 +309,7 @@ async def process_endpoint(request: Request, project_id: int, process_request: P
                 "signal": ResponseSignal.NO_FILES_ERROR.value,
             }
         )
-    
+
     process_controller = ProcessController(project_id=project_id)
 
     no_records = 0
@@ -168,11 +320,11 @@ async def process_endpoint(request: Request, project_id: int, process_request: P
                     )
 
     if do_reset == 1:
-        # delete associated vectors collection 
+        # delete associated vectors collection
         collection_name = nlp_controller.create_collection_name(project_id=project.project_id)
         _ = await request.app.vectordb_client.delete_collection(collection_name=collection_name)
-        
-        # delete associated chunks 
+
+        # delete associated chunks
         _ = await chunk_model.delete_chunks_by_project_id(
             project_id=project.project_id
         )

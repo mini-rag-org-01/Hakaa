@@ -14,6 +14,30 @@ const translations = {
       "ارفع المصدر، ثم سيقوم النظام بمعالجته وتقسيمه وإنشاء الترميز وإضافته إلى فهرس البحث.",
 
     projectId: "رقم المشروع",
+    selectProject: "اختر المشروع",
+    loadingProjects: "جارٍ تحميل المشاريع...",
+    selectProjectPlaceholder: "اختر مشروعًا",
+    unnamedProject: "مشروع بدون اسم #{id}",
+    newProject: "مشروع جديد",
+    projectManagement: "إدارة المشروع",
+    editProject: "بيانات المشروع",
+    createProjectTitle: "إنشاء مشروع جديد",
+    projectName: "اسم المشروع",
+    projectDescription: "وصف المشروع",
+    projectStatus: "حالة المشروع",
+    statusDraft: "مسودة",
+    statusProcessing: "قيد المعالجة",
+    statusReady: "جاهز",
+    statusFailed: "فشل",
+    isPublic: "إظهار المشروع في الشات",
+    saveProject: "حفظ المشروع",
+    createProject: "إنشاء المشروع",
+    savingProject: "جارٍ الحفظ...",
+    projectCreated: "تم إنشاء المشروع بنجاح",
+    projectUpdated: "تم تحديث المشروع بنجاح",
+    projectLoadFailed: "تعذر تحميل المشاريع: {error}",
+    projectSaveFailed: "تعذر حفظ المشروع: {error}",
+    projectNameRequired: "اكتب اسم المشروع أولًا",
     refreshStatus: "تحديث الحالة",
     apiStatus: "حالة الـAPI",
     indexedRecords: "السجلات المفهرسة",
@@ -63,7 +87,7 @@ const translations = {
     fileTooLarge: "حجم الملف يتجاوز 20MB",
     invalidChunk: "حجم الجزء غير صالح",
     invalidOverlap: "حجم التداخل يجب أن يكون أقل من حجم الجزء",
-    invalidProject: "رقم المشروع يجب أن يكون رقمًا صحيحًا أكبر من صفر",
+    invalidProject: "اختر مشروعًا أولًا",
 
     uploading: "جارٍ رفع الملف...",
     uploadDone: "اكتمل رفع الملف",
@@ -107,6 +131,30 @@ const translations = {
       "Upload a source and the system will process, chunk, embed, and add it to the search index.",
 
     projectId: "Project ID",
+    selectProject: "Select Project",
+    loadingProjects: "Loading projects...",
+    selectProjectPlaceholder: "Choose a project",
+    unnamedProject: "Unnamed project #{id}",
+    newProject: "New Project",
+    projectManagement: "Project Management",
+    editProject: "Project Details",
+    createProjectTitle: "Create New Project",
+    projectName: "Project Name",
+    projectDescription: "Project Description",
+    projectStatus: "Project Status",
+    statusDraft: "Draft",
+    statusProcessing: "Processing",
+    statusReady: "Ready",
+    statusFailed: "Failed",
+    isPublic: "Show project in chat",
+    saveProject: "Save Project",
+    createProject: "Create Project",
+    savingProject: "Saving...",
+    projectCreated: "Project created successfully",
+    projectUpdated: "Project updated successfully",
+    projectLoadFailed: "Could not load projects: {error}",
+    projectSaveFailed: "Could not save project: {error}",
+    projectNameRequired: "Enter the project name first",
     refreshStatus: "Refresh Status",
     apiStatus: "API Status",
     indexedRecords: "Indexed Records",
@@ -156,7 +204,7 @@ const translations = {
     fileTooLarge: "The file exceeds the 20MB limit",
     invalidChunk: "The chunk size is invalid",
     invalidOverlap: "Overlap size must be smaller than chunk size",
-    invalidProject: "Project ID must be a positive integer",
+    invalidProject: "Choose a project first",
 
     uploading: "Uploading the file...",
     uploadDone: "File upload completed",
@@ -194,7 +242,15 @@ const elements = {
   grafanaLink: document.querySelector("#grafanaLink"),
 
   projectId: document.querySelector("#projectId"),
+  newProject: document.querySelector("#newProject"),
   refreshStatus: document.querySelector("#refreshStatus"),
+  projectEditorTitle: document.querySelector("#projectEditorTitle"),
+  projectNumber: document.querySelector("#projectNumber"),
+  projectName: document.querySelector("#projectName"),
+  projectDescription: document.querySelector("#projectDescription"),
+  projectStatus: document.querySelector("#projectStatus"),
+  projectPublic: document.querySelector("#projectPublic"),
+  saveProject: document.querySelector("#saveProject"),
 
   apiState: document.querySelector("#apiState"),
   recordCount: document.querySelector("#recordCount"),
@@ -219,6 +275,8 @@ let currentLanguage =
 
 let currentStep = null;
 let toastTimer = null;
+let projects = [];
+let isCreatingProject = false;
 
 
 function t(key, values = {}) {
@@ -380,6 +438,12 @@ function setBusy(isBusy) {
   elements.chunkSize.disabled = isBusy;
   elements.overlapSize.disabled = isBusy;
   elements.projectId.disabled = isBusy;
+  elements.newProject.disabled = isBusy;
+  elements.projectName.disabled = isBusy;
+  elements.projectDescription.disabled = isBusy;
+  elements.projectStatus.disabled = isBusy || isCreatingProject;
+  elements.projectPublic.disabled = isBusy;
+  elements.saveProject.disabled = isBusy;
   elements.refreshStatus.disabled = isBusy;
   elements.languageToggle.disabled = isBusy;
 
@@ -436,6 +500,205 @@ async function requestJson(url, options = {}) {
   }
 
   return payload;
+}
+
+
+function projectLabel(project) {
+  const name = project?.project_name?.trim();
+
+  return name || t("unnamedProject", {
+    id: project?.project_id ?? "—"
+  });
+}
+
+
+function renderProjectOptions(selectedProjectId = null) {
+  elements.projectId.replaceChildren();
+
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = t("selectProjectPlaceholder");
+  elements.projectId.appendChild(placeholder);
+
+  for (const project of projects) {
+    const option = document.createElement("option");
+    option.value = String(project.project_id);
+    option.textContent = projectLabel(project);
+    elements.projectId.appendChild(option);
+  }
+
+  if (selectedProjectId !== null) {
+    elements.projectId.value = String(selectedProjectId);
+  }
+}
+
+
+function showProject(project) {
+  if (!project) return;
+
+  isCreatingProject = false;
+  elements.projectId.value = String(project.project_id);
+  elements.projectName.value = project.project_name || "";
+  elements.projectDescription.value =
+    project.project_description || "";
+  elements.projectStatus.value =
+    project.project_status || "draft";
+  elements.projectStatus.disabled = false;
+  elements.projectPublic.checked = Boolean(project.is_public);
+  elements.projectNumber.textContent = `#${project.project_id}`;
+  elements.projectEditorTitle.textContent = t("editProject");
+  elements.saveProject.textContent = t("saveProject");
+  elements.ingestButton.disabled = false;
+
+  localStorage.setItem(
+    "adminProjectId",
+    String(project.project_id)
+  );
+}
+
+
+function startNewProject() {
+  isCreatingProject = true;
+  elements.projectId.value = "";
+  elements.projectName.value = "";
+  elements.projectDescription.value = "";
+  elements.projectStatus.value = "draft";
+  elements.projectStatus.disabled = true;
+  elements.projectPublic.checked = false;
+  elements.projectNumber.textContent = t("newProject");
+  elements.projectEditorTitle.textContent = t("createProjectTitle");
+  elements.saveProject.textContent = t("createProject");
+  elements.recordCount.textContent = "—";
+  elements.ingestButton.disabled = true;
+  localStorage.removeItem("adminProjectId");
+  elements.projectName.focus();
+}
+
+
+async function loadProjects(preferredProjectId = null) {
+  try {
+    const payload = await requestJson(
+      "/api/v1/data/projects?page=1&page_size=100"
+    );
+
+    projects = Array.isArray(payload?.projects)
+      ? payload.projects
+      : [];
+
+    const savedProjectId = Number(
+      preferredProjectId ??
+      localStorage.getItem("adminProjectId")
+    );
+
+    const selectedProject =
+      projects.find(
+        project => project.project_id === savedProjectId
+      ) || projects[0] || null;
+
+    renderProjectOptions(selectedProject?.project_id ?? null);
+
+    if (selectedProject) {
+      showProject(selectedProject);
+      await refreshDashboard();
+    } else {
+      startNewProject();
+      setStatus(
+        elements.apiState,
+        t("connected"),
+        "status-online"
+      );
+    }
+  } catch (error) {
+    projects = [];
+    renderProjectOptions();
+    startNewProject();
+    setStatus(
+      elements.apiState,
+      t("disconnected"),
+      "status-offline"
+    );
+    showToast(
+      t("projectLoadFailed", { error: error.message }),
+      "error"
+    );
+  }
+}
+
+
+async function saveProject() {
+  const projectName = elements.projectName.value.trim();
+
+  if (!projectName) {
+    showToast(t("projectNameRequired"), "error");
+    elements.projectName.focus();
+    return;
+  }
+
+  const creating = isCreatingProject || !elements.projectId.value;
+  const projectId = creating ? null : getProjectId();
+  const url = creating
+    ? "/api/v1/data/projects"
+    : `/api/v1/data/projects/${projectId}`;
+
+  const body = {
+    project_name: projectName,
+    project_description:
+      elements.projectDescription.value.trim(),
+    is_public: elements.projectPublic.checked
+  };
+
+  if (creating && !body.project_description) {
+    body.project_description = null;
+  }
+
+  if (!creating) {
+    body.project_status = elements.projectStatus.value;
+  }
+
+  elements.saveProject.disabled = true;
+  elements.saveProject.textContent = t("savingProject");
+
+  try {
+    const result = await requestJson(url, {
+      method: creating ? "POST" : "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+
+    const savedId = result?.project?.project_id ?? projectId;
+
+    showToast(
+      creating ? t("projectCreated") : t("projectUpdated"),
+      "success"
+    );
+
+    await loadProjects(savedId);
+  } catch (error) {
+    showToast(
+      t("projectSaveFailed", { error: error.message }),
+      "error"
+    );
+  } finally {
+    elements.saveProject.disabled = false;
+    elements.saveProject.textContent = isCreatingProject
+      ? t("createProject")
+      : t("saveProject");
+  }
+}
+
+
+async function updateProjectStatus(projectId, projectStatus) {
+  await requestJson(`/api/v1/data/projects/${projectId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      project_status: projectStatus
+    })
+  });
 }
 
 
@@ -558,6 +821,9 @@ async function runIngestion(event) {
   );
 
   try {
+    await updateProjectStatus(projectId, "processing");
+    elements.projectStatus.value = "processing";
+
     currentStep = "upload";
     setStep("upload", "active", t("uploading"));
 
@@ -673,6 +939,17 @@ async function runIngestion(event) {
 
     writeLog(t("logVerifyDone"), infoResult);
 
+    await updateProjectStatus(projectId, "ready");
+    elements.projectStatus.value = "ready";
+
+    const completedProject = projects.find(
+      project => project.project_id === projectId
+    );
+
+    if (completedProject) {
+      completedProject.project_status = "ready";
+    }
+
     setJobState(
       t("operationComplete"),
       "status-online"
@@ -684,6 +961,13 @@ async function runIngestion(event) {
     elements.selectedFileName.textContent =
       t("clickToChoose");
   } catch (error) {
+    try {
+      await updateProjectStatus(projectId, "failed");
+      elements.projectStatus.value = "failed";
+    } catch (statusError) {
+      console.error(statusError);
+    }
+
     if (currentStep) {
       setStep(
         currentStep,
@@ -739,6 +1023,18 @@ elements.refreshStatus.addEventListener(
 );
 
 
+elements.newProject.addEventListener(
+  "click",
+  startNewProject
+);
+
+
+elements.saveProject.addEventListener(
+  "click",
+  saveProject
+);
+
+
 elements.clearLog.addEventListener("click", () => {
   elements.eventLog.textContent = t("displayCleared");
 });
@@ -748,12 +1044,14 @@ elements.projectId.addEventListener("change", () => {
   const projectId = Number(elements.projectId.value);
 
   if (Number.isInteger(projectId) && projectId > 0) {
-    localStorage.setItem(
-      "adminProjectId",
-      String(projectId)
+    const selectedProject = projects.find(
+      project => project.project_id === projectId
     );
 
+    showProject(selectedProject);
     refreshDashboard();
+  } else {
+    startNewProject();
   }
 });
 
@@ -763,18 +1061,6 @@ elements.form.addEventListener(
   runIngestion
 );
 
-
-const savedProjectId = Number(
-  localStorage.getItem("adminProjectId")
-);
-
-if (
-  Number.isInteger(savedProjectId) &&
-  savedProjectId > 0
-) {
-  elements.projectId.value = savedProjectId;
-}
-
 applyLanguage();
 resetPipeline();
-refreshDashboard();
+loadProjects();
