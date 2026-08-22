@@ -7,6 +7,7 @@ from cohere.errors import TooManyRequestsError
 from openai import RateLimitError
 from typing import List
 import logging
+import re 
 
 logger = logging.getLogger(__name__)
 
