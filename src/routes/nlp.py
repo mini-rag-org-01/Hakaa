@@ -210,7 +210,7 @@ async def search_index(
         template_parser=request.app.template_parser,
     )
 
-    results = await nlp_controller.search_vector_db_collection(
+    results = await nlp_controller.search_hybrid_db_collection(
         project=project,
         text=search_request.text,
         limit=search_request.limit,

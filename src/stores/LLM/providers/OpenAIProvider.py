@@ -33,25 +33,25 @@ class OpenAIProvider(LLMInterface):
      def set_generation_model(self, model_id: str):
           self.generation_moddel_id = model_id
 
-     def set_embedding_model(self, model_id: str, embedding_size: int):  
-          self.embedding_model_id = model_id   
+     def set_embedding_model(self, model_id: str, embedding_size: int):
+          self.embedding_model_id = model_id
           self.embedding_size = embedding_size
 
 
      def process_text(self, text: str):
           return text[:self.default_input_max_characters].strip()
-     
+
      def generate_text(self, prompt: str,  chat_history: list=[],
                     max_output_token: int=None,temperature: float = None):
-           
+
           if not self.client :
                self.logger.error("client was not set!")
                return None
-          
-          if not self.generation_moddel_id : 
+
+          if not self.generation_moddel_id :
                self.logger.error("embedding model was not set")
                return None
-          
+
           max_output_token = max_output_token if max_output_token else self.default_generation_max_output_tokens
           temperature = temperature if temperature else self.default_generation_tempreature
 
@@ -85,15 +85,16 @@ class OpenAIProvider(LLMInterface):
 
           if isinstance(text, str):
                text = [text]
-               
-          if not self.embedding_model_id: 
+
+          if not self.embedding_model_id:
                self.logger.error("embedding model for OpenAI was not set")
                return None
 
           try:
                response = self.client.embeddings.create(
-                    model = self.embedding_model_id,
-                    input=text
+                    model=self.embedding_model_id,
+                    input=text,
+                    encoding_format="float",
                )
           except APIConnectionError as e:
                self.logger.error(
