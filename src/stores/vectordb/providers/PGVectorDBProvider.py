@@ -1,11 +1,12 @@
 from ..VectorDBInterface import VectorDBInterface
 from ..VectorDBEnums import PgVectorTableSChemeEnums,PgVectorDistanceMethodEnums,PgVectorIndexTypeEnums,DistanceMethodEnums
-import logging 
-from typing import List 
+import logging
+from typing import List
 from models.db_schemes import RetrievedDocument
 # pyrefly: ignore [missing-import]
 from sqlalchemy.sql import text as sql_text
 import json
+import re
 
 class PGVectorDBProvider(VectorDBInterface):
 
@@ -27,6 +28,27 @@ class PGVectorDBProvider(VectorDBInterface):
         self.default_index_name = lambda collection_name : f'{collection_name}_vector_idx'
         self.index_threshold = index_threshold
 
+    LEXICAL_STOP_WORDS = {
+    "من",
+    "ما",
+    "ماذا",
+    "متى",
+    "أين",
+    "اين",
+    "كيف",
+    "هل",
+    "لماذا",
+    "في",
+    "على",
+    "عن",
+    "إلى",
+    "الى",
+    "مع",
+    "ثم",
+    "أو",
+    "او",
+    "و",
+    }
 
     async def connect(self):
         async with self.db_client() as session:
@@ -53,7 +75,7 @@ class PGVectorDBProvider(VectorDBInterface):
             async with session.begin():
                 list_tbl = sql_text("SELECT tablename FROM pg_tables WHERE tablename LIKE :prefix")
                 result = await session.execute(list_tbl, {'prefix' : self.pgvector_table_prefix})
-                record = result.scalars().all()        
+                record = result.scalars().all()
         return record
 
     async def get_collection_info(self, collection_name: str) -> dict:
@@ -69,7 +91,7 @@ class PGVectorDBProvider(VectorDBInterface):
                 record_count_result = await session.execute(count_sql)
 
                 table_data = tbl_info.fetchone()
-                if not table_data: 
+                if not table_data:
                     return None
 
                 return {
@@ -82,7 +104,7 @@ class PGVectorDBProvider(VectorDBInterface):
                     },
                     "record_count" : record_count_result.scalar_one(),
                 }
-                
+
 
 
     async def delete_collection(self, collection_name: str):
@@ -125,8 +147,8 @@ class PGVectorDBProvider(VectorDBInterface):
         async with self.db_client() as session:
             async with session.begin():
                 check_sql = sql_text(f'''
-                    SELECT 1 
-                    from pg_indexes 
+                    SELECT 1
+                    from pg_indexes
                     WHERE tablename = :collection_name
                     AND indexname = :index_name
                 ''')
@@ -162,7 +184,7 @@ class PGVectorDBProvider(VectorDBInterface):
                 self.logger.info(f"END: created vector index for collection {collection_name}")
 
 
-    async def reset_vector_index(self, collection_name:str, 
+    async def reset_vector_index(self, collection_name:str,
                                     index_type:str=PgVectorIndexTypeEnums.HNSW.value) -> bool:
 
         index_name = self.default_index_name(collection_name)
@@ -199,13 +221,18 @@ class PGVectorDBProvider(VectorDBInterface):
                             f'VALUES (:text, :vector, :metadata, :chunk_id')
                 metadata_json = json.dumps(metadata, ensure_ascii=False) if metadata is not None else {}
                 await session.execute(insert_sql,
-                {'text': text, 
+                {'text': text,
                 'vector': '[' + ','.join(str(v) for v in vector) +']',
                 'metadata':metadata_json,
                 'chunk_id': recored_id})
                 await session.commit()
-        
-        await self.create_vector_index(collection_name=collection_name)
+
+        await self.create_vector_index(
+            collection_name=collection_name
+            )
+        await self.create_text_index(
+            collection_name=collection_name
+        )
         return True
 
     async def insert_many(self, collection_name: str,texts:list, vectors:list,
@@ -233,7 +260,7 @@ class PGVectorDBProvider(VectorDBInterface):
                     for txt,vec,meta,rec_id in zip(batch_texts,batch_vectors,batch_metadata,batch_recored_ids):
                         metadata_json = json.dumps(meta, ensure_ascii=False) if meta is not None else {}
                         values.append({
-                            'text': txt, 
+                            'text': txt,
                             'vector': '[' + ','.join(str(v) for v in vec) +']',
                             'metadata':metadata_json,
                             'chunk_id': rec_id
@@ -246,16 +273,23 @@ class PGVectorDBProvider(VectorDBInterface):
                                 f'{PgVectorTableSChemeEnums.CHUNK_ID.value} '
                                 f') VALUES (:text, :vector, :metadata, :chunk_id)')
                     await session.execute(batch_insert_sql, values)
-        await self.create_vector_index(collection_name=collection_name)
+
+        await self.create_vector_index(
+            collection_name=collection_name
+            )
+
+        await self.create_text_index(
+            collection_name=collection_name
+        )
         return True
 
-    
+
     async def search_by_vector(self, collection_name: str,vector: list, limit: int):
         is_collection_existed = await self.is_collection_existed(collection_name=collection_name)
         if not is_collection_existed:
             self.logger.error(f"Can not search in non-existed collection: {collection_name}")
             return []
-        vector = "[" + ",".join(str(v) for v in vector) +"]"  
+        vector = "[" + ",".join(str(v) for v in vector) +"]"
 
         async with self.db_client() as session:
             async with session.begin():
@@ -281,3 +315,144 @@ class PGVectorDBProvider(VectorDBInterface):
                     )
                     for record in records
                 ]
+    def build_lexical_query(self, query_text: str) -> str:
+        if not query_text :
+            return ""
+        tokens = re.findall(
+            r"\w+",
+            query_text.lower(),
+            flags=re.UNICODE,
+        )
+        filtered_tokens = []
+
+        for token in tokens :
+            token = token.strip("_")
+
+            if not token :
+                continue
+
+            if token in self.LEXICAL_STOP_WORDS:
+                continue
+
+            if (
+                len(token) > 1
+                and token.startswith(("و", "ف"))
+                and token[1:] in self.LEXICAL_STOP_WORDS
+            ):
+                continue
+
+            if len(token) == 1 and not token.isdigit():
+                continue
+            if token not in filtered_tokens:
+                filtered_tokens.append(token)
+
+        return " | ".join(filtered_tokens[:20])
+
+
+
+    async def search_by_text(
+            self,
+            collection_name: str,
+            query_text: str,
+            limit: int = 10,
+        ):
+        
+        is_collection_existed = await self.is_collection_existed(
+            collection_name=collection_name
+        )
+
+        if not is_collection_existed:
+            self.logger.error(
+                "Cannot search text in non-existing collection: %s",
+                collection_name,
+            )
+            return []
+
+        lexical_query = self.build_lexical_query(query_text)
+
+        if not lexical_query:
+            return []
+
+        limit = max(1, min(int(limit), 100))
+
+        search_sql = sql_text(
+            f'''
+            SELECT
+                text,
+                ts_rank_cd(
+                    to_tsvector('simple', COALESCE(text, '')),
+                    to_tsquery('simple', :lexical_query)
+                ) AS score,
+                metadata,
+                chunk_id
+            FROM "{collection_name}"
+            WHERE
+                to_tsvector('simple', COALESCE(text, ''))
+                @@ to_tsquery('simple', :lexical_query)
+            ORDER BY score DESC, chunk_id ASC
+            LIMIT :limit
+            '''
+        )
+
+        async with self.db_client() as session:
+            result = await session.execute(
+                search_sql,
+                {
+                    "lexical_query": lexical_query,
+                    "limit": limit,
+                },
+            )
+            records = result.fetchall()
+
+        return [
+            RetrievedDocument(
+                text=record.text,
+                score=float(record.score),
+                metadata=record.metadata or {},
+                chunk_id=record.chunk_id,
+            )
+            for record in records
+        ]
+
+   
+    async def create_text_index(
+        self,
+        collection_name: str,
+    ) -> bool:
+        is_collection_existed = await self.is_collection_existed(
+            collection_name=collection_name
+        )
+
+        if not is_collection_existed:
+            self.logger.error(
+                "Cannot create text index for non-existing "
+                "collection: %s",
+                collection_name,
+            )
+            return False
+
+        index_name = f"{collection_name}_text_idx"
+
+        create_index_sql = sql_text(
+            f'''
+            CREATE INDEX IF NOT EXISTS "{index_name}"
+            ON "{collection_name}"
+            USING GIN (
+                to_tsvector(
+                    'simple',
+                    COALESCE(text, '')
+                )
+            )
+            '''
+        )
+
+        async with self.db_client() as session:
+            async with session.begin():
+                await session.execute(create_index_sql)
+
+        self.logger.info(
+            "Text index is ready for collection: %s",
+            collection_name,
+        )
+
+        return True

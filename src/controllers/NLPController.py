@@ -132,7 +132,7 @@ class NLPController(BaseController):
 
      async def answer_rag_question(self, project: Project, query: str, limit: int = 10):
           # step1: retrieve related documents
-          retieved_documents = await self.search_vector_db_collection(project=project, text=query, limit=limit)
+          retieved_documents = await self.search_hybrid_db_collection(project=project, text=query, limit=limit)
 
           # Bug: returning None here caused a TypeError when the route tried to unpack
           # the result as (answer, full_prompt, chat_history).
@@ -141,12 +141,12 @@ class NLPController(BaseController):
                logger.warning("No documents retrieved from vector DB for query: '%s'", query)
                return None, None, None, []
 
-          logger.info("Retrieved %d documents from vector DB.", len(retieved_documents))
+          logger.info("Retrieved %d documents using hybrid search.", len(retieved_documents))
           sources = self.build_sources(retieved_documents)
 
           # step2: construct LLM prompt
           system_prompt = self.template_parser.get("rag", "system_prompt")
-          print(retieved_documents)
+          # print(retieved_documents)
 
           documents_prompts = "\n".join([
                self.template_parser.get("rag", "document_prompt", {
@@ -177,7 +177,7 @@ class NLPController(BaseController):
           )
 
           if not answer:
-               logger.error("LLM returned no answer. Check that Ollama is running on port 11434.")
+               logger.error("LLM returned no answer. ")
 
           return answer, full_prompt, chat_history, sources
      def build_sources(self, retrieved_documents):
@@ -207,3 +207,145 @@ class NLPController(BaseController):
                })
 
           return sources
+
+     def reciprocal_rank_fusion(
+          self,
+          vector_results: list,
+          lexical_results: list,
+          limit: int = 10,
+          rrf_k: int = 60,
+          ):
+          limit = max(1, int(limit))
+          rrf_k = max(1, int(rrf_k))
+
+          fused_documents = {}
+
+          result_sets = (
+               ("vector", vector_results or []),
+               ("lexical", lexical_results or []),
+          )
+
+          for retrieval_method, documents in result_sets:
+               for rank, document in enumerate(documents, start=1):
+                    chunk_id = document.get("chunk_id")
+
+                    if chunk_id is not None:
+                         document_key = ("chunk_id", chunk_id)
+                    else:
+                         document_key = (
+                              "text",
+                              document.get("text", ""),
+                         )
+
+                    if document_key not in fused_documents:
+                         fused_documents[document_key] = {
+                              "text": document.get("text", ""),
+                              "metadata": document.get("metadata") or {},
+                              "chunk_id": chunk_id,
+                              "score": 0.0,
+                              "vector_score": None,
+                              "lexical_score": None,
+                              "retrieval_methods": [],
+                         }
+
+                    fused_document = fused_documents[document_key]
+
+                    fused_document["score"] += (
+                         1.0 / (rrf_k + rank)
+                    )
+
+                    score_key = f"{retrieval_method}_score"
+                    fused_document[score_key] = document.get("score")
+
+                    if (
+                         retrieval_method
+                         not in fused_document["retrieval_methods"]
+                    ):
+                         fused_document["retrieval_methods"].append(
+                              retrieval_method
+                         )
+
+          ranked_documents = sorted(
+               fused_documents.values(),
+               key=lambda document: document["score"],
+               reverse=True,
+          )
+
+          return ranked_documents[:limit]
+     async def search_text_db_collection(
+          self,
+          project: Project,
+          text: str,
+          limit: int = 10,
+     ):
+          collection_name = self.create_collection_name(
+               project_id=project.project_id
+          )
+
+          results = await self.vectordb_client.search_by_text(
+               collection_name=collection_name,
+               query_text=text,
+               limit=limit,
+          )
+
+          if not results:
+               return []
+
+          return [
+               result.model_dump()
+               for result in results
+          ]
+
+     async def search_hybrid_db_collection(
+          self,
+          project: Project,
+          text: str,
+          limit: int = 10,
+     ):
+          limit = max(1, int(limit))
+
+          # Retrieve more candidates before RRF,
+          # then return only the requested final limit.
+          candidate_limit = min(
+               max(limit * 3, 10),
+               100,
+          )
+
+          search_by_text = getattr(
+               self.vectordb_client,
+               "search_by_text",
+               None,
+          )
+
+          # Keep compatibility with providers such as Qdrant
+          # that do not implement lexical search yet.
+          if not callable(search_by_text):
+               logger.warning(
+                    "Lexical search is not supported by the "
+                    "current vector DB provider"
+               )
+
+               return await self.search_vector_db_collection(
+                    project=project,
+                    text=text,
+                    limit=limit,
+               )
+
+          vector_results, lexical_results = await asyncio.gather(
+               self.search_vector_db_collection(
+                    project=project,
+                    text=text,
+                    limit=candidate_limit,
+               ),
+               self.search_text_db_collection(
+                    project=project,
+                    text=text,
+                    limit=candidate_limit,
+               ),
+          )
+
+          return self.reciprocal_rank_fusion(
+               vector_results=vector_results,
+               lexical_results=lexical_results,
+               limit=limit,
+          )
