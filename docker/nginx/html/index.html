@@ -661,18 +661,35 @@
         sourceBox.className = "sources";
         sourceBox.innerHTML =
           "<strong>المصادر:</strong><br>" +
-          sources.map((source, index) =>
-            `${index + 1}. ${escapeHtml(String(source.title || source.name || source))}`
-          ).join("<br>");
+          sources.map((source, index) => {
+            const title =
+              typeof source === "object"
+                ? source.title || source.name || "مصدر غير معروف"
+                : source;
 
-        message.appendChild(sourceBox);
-      }
+            const pageNumber =
+              typeof source === "object"
+                ? source.page_number
+                : null;
 
-      row.append(avatar, message);
-      chat.appendChild(row);
-      chat.scrollTop = chat.scrollHeight;
-      return row;
-    }
+            const pageLabel =
+              pageNumber !== null && pageNumber !== undefined
+                ? ` — الصفحة ${pageNumber}`
+                : "";
+
+            return `${index + 1}. ${escapeHtml(
+              String(title)
+            )}${escapeHtml(pageLabel)}`;
+                  }).join("<br>");
+
+                  message.appendChild(sourceBox);
+                }
+
+                row.append(avatar, message);
+                chat.appendChild(row);
+                chat.scrollTop = chat.scrollHeight;
+                return row;
+              }
 
     function addTyping() {
       const row = document.createElement("div");

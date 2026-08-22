@@ -110,7 +110,7 @@ class NLPController(BaseController):
                return 
           
           return [
-               result.dict()        
+               result.model_dump()
                for result in results 
           ]
       
@@ -124,9 +124,10 @@ class NLPController(BaseController):
           # Fix: always return a consistent tuple so the route can handle it cleanly.
           if not retieved_documents or len(retieved_documents) == 0:
                logger.warning("No documents retrieved from vector DB for query: '%s'", query)
-               return None, None, None
+               return None, None, None, []
 
           logger.info("Retrieved %d documents from vector DB.", len(retieved_documents))
+          sources = self.build_sources(retieved_documents)
 
           # step2: construct LLM prompt
           system_prompt = self.template_parser.get("rag", "system_prompt")
@@ -163,4 +164,31 @@ class NLPController(BaseController):
           if not answer:
                logger.error("LLM returned no answer. Check that Ollama is running on port 11434.")
 
-          return answer, full_prompt, chat_history
+          return answer, full_prompt, chat_history, sources
+     def build_sources(self, retrieved_documents):
+          sources = []
+          seen = set()
+
+          for document in retrieved_documents:
+               metadata = document.get("metadata") or {}
+               file_id = metadata.get("file_id")
+               page_number = metadata.get("page_number")
+
+               if not file_id:
+                    continue
+
+               source_key = (file_id, page_number)
+
+               if source_key in seen:
+                    continue
+
+               seen.add(source_key)
+
+               sources.append({
+                    "title": file_id,
+                    "page_number": page_number,
+                    "chunk_id": document.get("chunk_id"),
+                    "score": document.get("score"),
+               })
+
+          return sources

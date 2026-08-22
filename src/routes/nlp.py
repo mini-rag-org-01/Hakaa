@@ -261,7 +261,7 @@ async def answer_index(
         template_parser=request.app.template_parser,
     )
 
-    answer, full_prompt, chat_history = (
+    answer, full_prompt, chat_history, sources = (
         await nlp_controller.answer_rag_question(
             project=project,
             query=search_request.text,
@@ -281,6 +281,7 @@ async def answer_index(
         content={
             "signal": ResponseSignal.RAG_ANSWER_SUCCESS.value,
             "answer": answer,
+            "sources": sources,
             "full_prompt": full_prompt,
             "chat_history": chat_history,
         }
