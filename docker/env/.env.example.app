@@ -20,7 +20,7 @@ EMBEDDING_BACKEND="NEMOTRON"
 OPENAI_API_KEY="NEW_ROTATED_OPENROUTER_KEY"
 OPENAI_API_URL="https://openrouter.ai/api/v1"
 
-GENERATION_MODEL_ID="openai/gpt-oss-20b:free"
+GENERATION_MODEL_ID="nvidia/nemotron-3.5-lightning:free"
 EMBEDDING_MODEL_ID="nvidia/nemotron-3-embed-1b:free"
 EMBEDDING_MODEL_SIZE=1024
 
