@@ -3,6 +3,7 @@ from models.db_schemes.minirag.schemes import Project, DataChunk
 from stores.LLM.LLMEnums import DocumentTypeEnum
 import asyncio
 from cohere.errors import TooManyRequestsError
+from openai import RateLimitError
 from typing import List
 import logging
 
@@ -17,20 +18,20 @@ class NLPController(BaseController):
           self.template_parser = template_parser
 
      def create_collection_name(self, project_id):
-          return f"collection_{self.vectordb_client.default_vector_size}_{project_id}".strip() 
-     
-     async def reset_vector_db_collection(self, project: Project): 
+          return f"collection_{self.vectordb_client.default_vector_size}_{project_id}".strip()
+
+     async def reset_vector_db_collection(self, project: Project):
           # Bug: this used `Project.project_id` (the class), which has no runtime value.
           # Fix: read `project.project_id` from the actual project instance passed in.
           collection_name = self.create_collection_name(project_id=project.project_id)
           return await self.vectordb_client.delete_collection(collection_name= collection_name)
-     
+
      async def get_vector_db_collection_info(self, project: Project):
           # Same class-vs-instance bug here: the collection name must come from the loaded project record.
           collection_name = self.create_collection_name(project_id=project.project_id)
           collection_info = await self.vectordb_client.get_collection_info(collection_name=collection_name)
           return collection_info
- 
+
      async def index_into_vector_db(
      self,
      project: Project,
@@ -55,21 +56,35 @@ class NLPController(BaseController):
                     )
                     break
 
-               except TooManyRequestsError:
+               except (
+                    TooManyRequestsError,
+                    RateLimitError,
+                    ) as error:
                     if attempt == max_attempts:
                          logger.exception(
-                              "Cohere rate limit persisted after %d attempts",
+                              "Embedding rate limit persisted "
+                              "after %d attempts",
                               max_attempts,
                          )
                          raise
 
+                    if isinstance(error, TooManyRequestsError):
+                         retry_delay = 65
+                    else:
+                         retry_delay = min(
+                              60,
+                              5 * (2 ** (attempt - 1)),
+                         )
+
                     logger.warning(
-                         "Cohere rate limit reached. Waiting 65 seconds "
-                         "before retry %d/%d",
+                         "Embedding rate limit reached. "
+                         "Waiting %d seconds before retry %d/%d",
+                         retry_delay,
                          attempt + 1,
                          max_attempts,
                     )
-                    await asyncio.sleep(65)
+
+                    await asyncio.sleep(retry_delay)
 
           if not vectors or len(vectors) != len(texts):
                logger.error(
@@ -90,13 +105,13 @@ class NLPController(BaseController):
           collection_name = self.create_collection_name(project_id=project.project_id)
           vectors = self.embedding_client.embed_text(text = text,
                                              document_type = DocumentTypeEnum.QUERY.value)
-          
+
           if not vectors or len(vectors) == 0 :
                return False
-          
+
           if isinstance(vectors, list) or len(vectors) > 0:
                query_vector = vectors[0]
-          
+
           if not query_vector:
                logger.error("Failed to get query vector")
                return False
@@ -104,17 +119,17 @@ class NLPController(BaseController):
           results = await self.vectordb_client.search_by_vector(
                collection_name = collection_name,
                vector = query_vector,
-               limit = limit 
+               limit = limit
           )
           if not results:
-               return 
-          
+               return
+
           return [
                result.model_dump()
-               for result in results 
+               for result in results
           ]
-      
-     
+
+
      async def answer_rag_question(self, project: Project, query: str, limit: int = 10):
           # step1: retrieve related documents
           retieved_documents = await self.search_vector_db_collection(project=project, text=query, limit=limit)
@@ -132,11 +147,11 @@ class NLPController(BaseController):
           # step2: construct LLM prompt
           system_prompt = self.template_parser.get("rag", "system_prompt")
           print(retieved_documents)
-     
+
           documents_prompts = "\n".join([
                self.template_parser.get("rag", "document_prompt", {
                     "doc_num": idx,
-                    "chunk_text": self.generation_client.process_text(doc["text"]) 
+                    "chunk_text": self.generation_client.process_text(doc["text"])
                })
                for idx, doc in enumerate(retieved_documents)
           ])
