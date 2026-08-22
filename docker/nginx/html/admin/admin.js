@@ -61,8 +61,11 @@ const translations = {
     advancedSettings: "إعدادات التقسيم المتقدمة",
     chunkSize: "حجم الجزء",
     overlapSize: "حجم التداخل",
+    resetOption: "إعادة بناء المشروع من البداية",
     resetWarning:
-      "لن تستخدم الواجهة خيار Reset حفاظًا على البيانات الحالية.",
+      "سيؤدي هذا إلى حذف الأجزاء والفهرس الحالي للمشروع.",
+    resetConfirm:
+      "سيتم حذف جميع الأجزاء والفهرس الحالي لهذا المشروع. هل تريد المتابعة؟",
     startIngestion: "ابدأ الرفع والفهرسة",
     workingButton: "جارٍ تنفيذ العملية...",
 
@@ -178,8 +181,11 @@ const translations = {
     advancedSettings: "Advanced Chunking Settings",
     chunkSize: "Chunk Size",
     overlapSize: "Overlap Size",
+    resetOption: "Rebuild Project from Scratch",
     resetWarning:
-      "The Reset option is disabled to protect the existing data.",
+      "This deletes the project's existing chunks and vector index.",
+    resetConfirm:
+      "All existing chunks and the current vector index will be deleted. Continue?",
     startIngestion: "Start Upload and Indexing",
     workingButton: "Processing...",
 
@@ -261,6 +267,7 @@ const elements = {
   selectedFileName: document.querySelector("#selectedFileName"),
   chunkSize: document.querySelector("#chunkSize"),
   overlapSize: document.querySelector("#overlapSize"),
+  doReset: document.querySelector("#doReset"),
   ingestButton: document.querySelector("#ingestButton"),
 
   pipeline: document.querySelector("#pipeline"),
@@ -437,6 +444,7 @@ function setBusy(isBusy) {
   elements.fileInput.disabled = isBusy;
   elements.chunkSize.disabled = isBusy;
   elements.overlapSize.disabled = isBusy;
+  elements.doReset.disabled = isBusy;
   elements.projectId.disabled = isBusy;
   elements.newProject.disabled = isBusy;
   elements.projectName.disabled = isBusy;
@@ -791,6 +799,12 @@ async function runIngestion(event) {
     return;
   }
 
+  const doReset = elements.doReset.checked ? 1 : 0;
+
+  if (doReset === 1 && !window.confirm(t("resetConfirm"))) {
+    return;
+  }
+
   let projectId;
 
   try {
@@ -862,7 +876,7 @@ async function runIngestion(event) {
           file_id: fileId,
           chunk_size: chunkSize,
           overlap_size: overlapSize,
-          do_reset: 0
+          do_reset: doReset
         })
       }
     );
@@ -891,7 +905,7 @@ async function runIngestion(event) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          do_reset: 0
+          do_reset: doReset
         })
       }
     );

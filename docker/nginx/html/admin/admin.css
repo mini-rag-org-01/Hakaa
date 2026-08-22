@@ -683,3 +683,36 @@ html[dir="rtl"] #activityLog {
 html[dir="ltr"] #activityLog {
   text-align: left;
 }
+
+.reset-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(240, 185, 94, 0.35);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.reset-option input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  accent-color: var(--warning);
+}
+
+.reset-option span {
+  display: grid;
+  gap: 5px;
+}
+
+.reset-option strong {
+  color: var(--warning);
+}
+
+.reset-option small {
+  color: var(--muted);
+  line-height: 1.6;
+}
