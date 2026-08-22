@@ -203,7 +203,7 @@ class NLPController(BaseController):
 
                sources.append({
                     "title": self.format_source_title(file_id),
-                    "page_number": page_number,
+                    # "page_number": page_number,
                     "chunk_id": document.get("chunk_id"),
                     "score": document.get("score"),
                })
