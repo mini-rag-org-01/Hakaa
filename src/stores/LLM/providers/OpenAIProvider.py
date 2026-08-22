@@ -1,6 +1,6 @@
 from ..LLMInterface import LLMInterface
 from ..LLMEnums import OpenAIEnums
-from openai import OpenAI, APIConnectionError
+from openai import OpenAI, OpenAIError
 import logging
 from typing import Union, List
 
@@ -40,43 +40,85 @@ class OpenAIProvider(LLMInterface):
 
      def process_text(self, text: str):
           return text[:self.default_input_max_characters].strip()
-
-     def generate_text(self, prompt: str,  chat_history: list=[],
-                    max_output_token: int=None,temperature: float = None):
-
-          if not self.client :
-               self.logger.error("client was not set!")
+     
+     def generate_text(
+          self,
+          prompt: str,
+          chat_history: list = None,
+          max_output_token: int = None,
+          temperature: float = None,
+          ):
+          if not self.client:
+               self.logger.error("OpenAI client was not set")
                return None
 
-          if not self.generation_moddel_id :
-               self.logger.error("embedding model was not set")
+          if not self.generation_moddel_id:
+               self.logger.error("Generation model was not set")
                return None
 
-          max_output_token = max_output_token if max_output_token else self.default_generation_max_output_tokens
-          temperature = temperature if temperature else self.default_generation_tempreature
+          if chat_history is None:
+               chat_history = []
+
+          if max_output_token is None:
+               max_output_token = (
+                    self.default_generation_max_output_tokens
+               )
+
+          if temperature is None:
+               temperature = (
+                    self.default_generation_tempreature
+               )
 
           chat_history.append(
-          self.construct_prompt(prompt=prompt, role=OpenAIEnums.USER))
+               self.construct_prompt(
+                    prompt=prompt,
+                    role=OpenAIEnums.USER,
+               )
+          )
+
+          completion_options = {
+               "model": self.generation_moddel_id,
+               "messages": chat_history,
+               "max_tokens": max_output_token,
+               "temperature": temperature,
+          }
+
+          if (
+               self.api_url
+               and "openrouter.ai" in self.api_url.lower()
+          ):
+               completion_options["extra_body"] = {
+                    "reasoning": {
+                         "exclude": True,
+                    }
+               }
 
           try:
                response = self.client.chat.completions.create(
-                    model = self.generation_moddel_id,
-                    messages = chat_history,
-                    max_tokens = max_output_token,
-                    temperature = temperature
+                    **completion_options
                )
-          except APIConnectionError as e:
+
+          except OpenAIError as error:
                self.logger.error(
-                    f"LLM connection error: could not reach '{self.api_url}'. "
-                    f"Make sure Ollama (or your LLM server) is running. Details: {e}"
+                    "LLM connection error: could not reach '%s'. "
+                    "Details: %s",
+                    self.api_url,
+                    error,
                )
                return None
 
-          if not response or not response.choices or len(response.choices) == 0 or not response.choices[0]:
-               self.logger.error("Error while generating text with OpenAI")
+          if (
+               not response
+               or not response.choices
+               or not response.choices[0]
+               or not response.choices[0].message.content
+          ):
+               self.logger.error(
+                    "Generation provider returned no answer"
+               )
                return None
 
-          return response.choices[0].message.content
+          return response.choices[0].message.content.strip()
 
      def embed_text(self, text: Union[str, List[str]], document_type: str =None):
           if not self.client :
@@ -96,7 +138,7 @@ class OpenAIProvider(LLMInterface):
                     input=text,
                     encoding_format="float",
                )
-          except APIConnectionError as e:
+          except OpenAIError as e:
                self.logger.error(
                     f"LLM connection error: could not reach '{self.api_url}'. "
                     f"Make sure Ollama (or your LLM server) is running. Details: {e}"

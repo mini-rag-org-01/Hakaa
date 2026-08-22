@@ -1,6 +1,7 @@
 from .BaseController import BaseController
 from models.db_schemes.minirag.schemes import Project, DataChunk
 from stores.LLM.LLMEnums import DocumentTypeEnum
+from pathlib import Path
 import asyncio
 from cohere.errors import TooManyRequestsError
 from openai import RateLimitError
@@ -200,7 +201,7 @@ class NLPController(BaseController):
                seen.add(source_key)
 
                sources.append({
-                    "title": file_id,
+                    "title": self.format_source_title(file_id),
                     "page_number": page_number,
                     "chunk_id": document.get("chunk_id"),
                     "score": document.get("score"),
@@ -349,3 +350,19 @@ class NLPController(BaseController):
                lexical_results=lexical_results,
                limit=limit,
           )
+
+     def format_source_title(self, file_id: str) -> str:
+          if not file_id:
+               return "مصدر غير معروف"
+
+          file_stem = Path(file_id).stem
+
+          clean_title = re.sub(
+               r"^[a-zA-Z0-9]{12}_",
+               "",
+               file_stem,
+          )
+
+          clean_title = clean_title.replace("_", " ").strip()
+
+          return clean_title or file_stem
