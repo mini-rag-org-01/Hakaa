@@ -1,235 +1,341 @@
----
-title: Hakaa
-emoji: 📜
-colorFrom: yellow
-colorTo: red
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Hakaa — حكّاء
 
 **Hakaa** is an Arabic-first Retrieval-Augmented Generation (RAG) application for exploring historical books and documents through natural-language conversations.
 
-The system provides two interfaces:
+The project started as a lightweight **Mini-RAG** implementation and was gradually extended into a deployable historical RAG system with:
 
-- A public chat interface where users select an available historical project and ask questions about its sources.
-- A protected administration dashboard where administrators create and manage projects, upload documents, configure chunking, run indexing, and monitor project status.
+- Project-based document management.
+- PDF/TXT ingestion.
+- Semantic and lexical retrieval.
+- Hybrid Search using Reciprocal Rank Fusion (RRF).
+- Source metadata preservation.
+- Public and administration interfaces.
+- Dockerized deployment.
+- Monitoring and CI/CD-oriented production setup.
 
-Hakaa was originally built from the lightweight **mini-RAG** backend and was extended into a deployable, project-based historical knowledge platform.
+The current version is **Hakaa V2**.
 
-Production: [https://hakaa.publicvm.com](https://hakaa.publicvm.com)
+Production:
 
----
+## Live Demo
 
-## Main features
-
-- Arabic and English user interfaces.
-- Separate public chat and protected administration dashboard.
-- Named projects with automatically generated numeric IDs.
-- Public/private project visibility and project lifecycle status.
-- Upload and processing of `.txt` and `.pdf` documents.
-- Configurable chunk size and overlap from the administration UI.
-- Arabic-aware text preprocessing and recursive chunking.
-- Preservation of source metadata during processing and retrieval.
-- Semantic vector search using multilingual embeddings.
-- Grounded answers generated only from retrieved document chunks.
-- Source references containing the stored filename and page number when available.
-- PostgreSQL for projects, assets, and chunks.
-- pgvector as the primary vector database, with optional Qdrant support.
-- HTTPS termination and reverse proxying through Nginx.
-- Basic Authentication for the administration dashboard and ingestion endpoints.
-- Monitoring through Prometheus, Grafana, Loki, and system exporters.
-- Docker Compose deployment and GitHub Actions delivery workflow.
+[Hakaa — حكّاء](https://hakaa.publicvm.com)
 
 ---
 
-## How Hakaa works
+## Project idea
 
-Each collection of related historical sources is represented as a **project**.
+Hakaa was originally built as a simple Mini-RAG system.
 
-1. The administrator creates a project and gives it a descriptive name.
-2. PostgreSQL generates the project ID automatically.
-3. One or more TXT or PDF sources are uploaded to that project.
-4. Hakaa cleans and splits the text into overlapping chunks.
-5. Chunk text and metadata are stored in PostgreSQL.
-6. Multilingual embeddings are generated for the chunks.
-7. The embeddings are stored in a project-specific vector collection.
-8. The administrator marks the project as `ready` and optionally makes it public.
-9. The public chat displays only projects that are both public and ready.
-10. A user selects a project and asks a question.
-11. Hakaa retrieves the most semantically relevant chunks and sends them to the generation model.
-12. The response is displayed with its available source references.
+The first version followed the traditional RAG pipeline:
 
----
+```text
+Document
+   ↓
+Text extraction
+   ↓
+Chunking
+   ↓
+Embeddings
+   ↓
+Vector Database
+   ↓
+Semantic Search
+   ↓
+LLM
+   ↓
+Answer
+```
 
-## Application interfaces
+The purpose of V1 was mainly to understand and implement the complete RAG flow.
 
-### Public chat
+After that, the project was developed into **Hakaa**, a historical RAG system focused on Arabic historical sources.
 
-The public interface is available at `/`.
+The current public project is based on:
 
-It allows the user to:
+```text
+كتاب الكامل في التاريخ
+```
 
-- Select a public, ready project by name.
-- Ask questions in Arabic or English.
-- Receive answers grounded in the selected project's sources.
-- View the filename and page number of the retrieved sources when that metadata is available.
-
-### Administration dashboard
-
-The administration interface is available at `/admin/` and is protected by Nginx Basic Authentication.
-
-It allows an administrator to:
-
-- Create projects without manually choosing numeric IDs.
-- Edit the project name and description.
-- Control project status and public visibility.
-- Select an existing project.
-- Upload TXT and PDF files.
-- Select chunk size and overlap.
-- Run the upload, processing, embedding, and indexing pipeline.
-- View indexed-record counts and operation progress.
-- Open the chat or monitoring dashboard.
+The long-term vision is to expand Hakaa into a digital historical source platform that can contain multiple Arabic historical books and help users search, compare, and trace historical information back to its original source.
 
 ---
 
-## Document preprocessing
+# Main Features
 
-Hakaa performs a preprocessing stage before creating embeddings.
-
-### Text cleaning
-
-The preprocessing layer:
-
-- Replaces non-breaking spaces.
-- Removes invisible left-to-right and right-to-left marks.
-- Normalizes repeated spaces and tabs.
-- Normalizes unnecessary line breaks.
-- Skips empty pages or documents.
-
-### Recursive chunking
-
-The current splitter uses LangChain's `RecursiveCharacterTextSplitter` and attempts to preserve meaningful Arabic boundaries in this order:
-
-1. Paragraph breaks.
-2. Line breaks.
-3. Arabic question marks.
-4. Full stops.
-5. Arabic commas.
-6. Spaces.
-7. Individual characters as a final fallback.
-
-The default configuration is:
-
-| Setting | Default |
-|---|---:|
-| Chunk size | 400 characters |
-| Chunk overlap | 60 characters |
-
-Both values can be changed from the administration interface before processing a file. The overlap must be smaller than the chunk size.
-
-### Preserved metadata
-
-Each generated chunk can preserve:
-
-- `source`
-- `file_id`
-- `page_number`
-- `page_chunk_index`
-
-PDF files preserve page-level boundaries. A plain TXT file is loaded as one document, so its chunks normally use page number `1` unless page boundaries are introduced by a future TXT parser.
+- Arabic-first historical RAG system.
+- Public chat interface.
+- Protected administration dashboard.
+- Named projects with automatically generated IDs.
+- Upload support for `.txt`.
+- PDF page metadata preservation.
+- Configurable chunk size and chunk overlap.
+- Recursive Arabic-aware text chunking.
+- Semantic Vector Search using pgvector.
+- PostgreSQL Full-Text Search.
+- GIN Index for lexical search.
+- Hybrid Search combining Semantic and Lexical retrieval.
+- Reciprocal Rank Fusion (RRF).
+- Parallel execution of both retrieval pipelines using `asyncio`.
+- Project-specific vector collections.
+- Nemotron embeddings.
+- PostgreSQL + pgvector as the main data and vector layer.
+- Optional Qdrant support.
+- Source filename and chunk metadata.
+- Docker Compose deployment.
+- Nginx reverse proxy.
+- HTTPS using Let's Encrypt.
+- Basic Authentication for administration routes.
+- Prometheus metrics.
+- Grafana monitoring.
+- Loki service.
+- PostgreSQL and Node exporters.
+- Alembic migrations.
+- Deployment workflow prepared for GitHub Actions.
 
 ---
 
-## Retrieval and answer generation
+# Hakaa Versions
 
-The current retrieval pipeline uses dense semantic search:
+## V1 — Mini-RAG
 
-1. The user's question is embedded as a query vector.
-2. Hakaa searches the selected project's pgvector collection.
-3. The most similar chunks are returned with their scores, metadata, and chunk IDs.
-4. Duplicate source references are removed using `(file_id, page_number)` as the source key.
-5. The retrieved chunks are formatted into the localized RAG prompt.
-6. The generation model produces an answer based only on those chunks.
-7. The API returns the answer and its deduplicated source list.
+The first version used a basic dense retrieval pipeline.
 
-Example source object:
+```text
+Question
+   ↓
+Embedding
+   ↓
+Vector Search
+   ↓
+Top-K Chunks
+   ↓
+LLM
+   ↓
+Answer
+```
+
+The focus of V1 was understanding:
+
+- RAG basics.
+- Embeddings.
+- Chunking.
+- Vector databases.
+- LLM prompting.
+- FastAPI.
+- Docker.
+- Project architecture.
+- Production deployment.
+
+---
+
+## V2 — Hakaa
+
+V2 improves retrieval quality by introducing **Hybrid Search**.
+
+Instead of depending only on Semantic Search, Hakaa now combines:
+
+```text
+Semantic Search
++
+Lexical Search
++
+RRF
+```
+
+The main V2 retrieval architecture is:
+
+```text
+                    User Question
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+              ▼                     ▼
+       Semantic Search        Lexical Search
+      pgvector + HNSW        PostgreSQL FTS
+              │                 + GIN Index
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+                         RRF
+                         │
+                         ▼
+                    Final Top-K
+                         │
+                         ▼
+                       LLM
+                         │
+                         ▼
+               Answer + Sources
+```
+
+---
+
+## V3 — Next Version
+
+The next version of Hakaa will focus on two main improvements:
+
+### 1. OCR
+
+Add OCR support for scanned historical PDF books.
+
+Currently Hakaa works best with:
+
+- TXT files.
+- PDFs containing extractable text.
+
+Many historical books are available only as scanned pages, so V3 will introduce OCR to convert page images into searchable Arabic text.
+
+Target flow:
+
+```text
+Scanned PDF
+    ↓
+Page Images
+    ↓
+Arabic OCR
+    ↓
+Extracted Text
+    ↓
+Chunking
+    ↓
+Embeddings
+    ↓
+Hybrid Search
+```
+
+### 2. Evaluation
+
+The second goal of V3 is to evaluate the retrieval system properly.
+
+Instead of depending only on manual testing, Hakaa will use a historical question-answer evaluation set to compare:
+
+```text
+Semantic Search
+vs
+Lexical Search
+vs
+Hybrid Search + RRF
+```
+
+Possible evaluation metrics include:
+
+- Hit Rate@K
+- Recall@K
+- MRR
+- Retrieval latency
+
+The goal is to measure whether the correct historical chunk appears in the retrieved results and to evaluate whether Hybrid Search actually improves retrieval quality.
+
+---
+
+# Application Interfaces
+
+Hakaa provides two interfaces.
+
+---
+
+## Public Chat
+
+Available at:
+
+```text
+/
+```
+
+The public interface allows the user to:
+
+- Select a public historical project.
+- Ask a question in Arabic or English.
+- Receive an answer based on the indexed project sources.
+- View the retrieved source references returned by the backend.
+
+The public chat sends questions to:
+
+```text
+POST /api/v1/nlp/index/answer/{project_id}
+```
+
+Example request:
 
 ```json
 {
-  "title": "history.pdf",
-  "page_number": 25,
-  "chunk_id": 123,
-  "score": 0.91
+  "text": "من بنى بغداد؟",
+  "limit": 5
 }
 ```
 
-The second version of Hakaa is preparing the retrieval layer for lexical search, hybrid search, Reciprocal Rank Fusion, reranking, and measurable retrieval evaluation. These features should not be considered complete until they are implemented and evaluated.
-
 ---
 
-## Technology stack
+## Administration Dashboard
 
-| Layer | Technology |
-|---|---|
-| Public UI | HTML, CSS, vanilla JavaScript |
-| Administration UI | HTML, CSS, vanilla JavaScript |
-| API framework | FastAPI + Uvicorn |
-| Validation | Pydantic v2 |
-| Relational database | PostgreSQL + pgvector extension |
-| Vector database | pgvector (primary) or Qdrant (alternative) |
-| Async database access | SQLAlchemy async + asyncpg |
-| Database migrations | Alembic |
-| File loading | LangChain loaders + PyMuPDF |
-| Text splitting | RecursiveCharacterTextSplitter |
-| Generation providers | OpenAI-compatible APIs, OpenRouter, Ollama, or Cohere |
-| Embedding providers | Cohere or OpenAI-compatible APIs |
-| Reverse proxy | Nginx |
-| TLS certificates | Let's Encrypt + Certbot |
-| Metrics | Prometheus |
-| Dashboards | Grafana |
-| Logs | Loki |
-| Host metrics | Node Exporter |
-| PostgreSQL metrics | Postgres Exporter |
-| Containerization | Docker Compose |
-| Deployment automation | GitHub Actions over SSH |
-
----
-
-## Architecture
+Available at:
 
 ```text
-Browser
-├── Public chat: /
-└── Admin dashboard: /admin/
-          │
-          ▼
-Nginx
-├── HTTPS termination
-├── Static UI delivery
-├── Basic Auth for administration routes
-└── /api/ reverse proxy
-          │
-          ▼
-FastAPI
-├── Project management
-├── File upload and validation
-├── Text preprocessing and chunking
-├── Embedding and indexing
-├── Retrieval
-└── RAG answer generation
-     │                 │
-     ▼                 ▼
-PostgreSQL          LLM providers
-├── projects        ├── OpenRouter
-├── assets          ├── Ollama
-├── chunks          └── Cohere
-└── pgvector collections
+/admin/
 ```
 
-Each project uses a separate vector collection whose name is derived from the embedding dimension and project ID:
+The administration dashboard is protected with Nginx Basic Authentication.
+
+It allows the administrator to:
+
+- Create projects.
+- Edit project name and description.
+- Change project status.
+- Make a project public or private.
+- Upload TXT and PDF files.
+- Configure chunk size.
+- Configure chunk overlap.
+- Process uploaded documents.
+- Generate embeddings.
+- Build the search indexes.
+- View indexed record counts.
+- Reset and rebuild project chunks/indexes when required.
+
+Project statuses include:
+
+```text
+draft
+processing
+ready
+failed
+```
+
+---
+
+# Project-Based Architecture
+
+Hakaa is designed around projects.
+
+Each project represents a separate historical knowledge collection.
+
+Example:
+
+```text
+Hakaa
+│
+├── Project 1001
+│   └── الكامل في التاريخ
+│
+├── Project 1002
+│   └── تاريخ الطبري
+│
+└── Project 1003
+    └── تاريخ بغداد
+```
+
+Each project contains:
+
+- Project ID.
+- Project name.
+- Description.
+- Status.
+- Public/private flag.
+- Uploaded assets.
+- Processed chunks.
+- Vector collection.
+
+The vector collection naming convention is:
 
 ```text
 collection_<embedding_size>_<project_id>
@@ -238,96 +344,878 @@ collection_<embedding_size>_<project_id>
 Example:
 
 ```text
-collection_384_1003
+collection_1024_1003
 ```
 
 ---
 
-## Repository layout
+# Document Processing
+
+Hakaa currently supports:
+
+```text
+.txt
+.pdf
+```
+
+The processing pipeline is:
+
+```text
+Upload File
+    ↓
+Validate File
+    ↓
+Store File
+    ↓
+Load Text
+    ↓
+Clean Text
+    ↓
+Split into Chunks
+    ↓
+Store Chunks in PostgreSQL
+    ↓
+Generate Embeddings
+    ↓
+Store Vectors
+    ↓
+Build Indexes
+```
+
+---
+
+# Text Cleaning
+
+The preprocessing layer performs basic cleanup before chunking.
+
+It includes:
+
+- Replacing non-breaking spaces.
+- Removing invisible RTL/LTR characters.
+- Normalizing repeated spaces.
+- Normalizing unnecessary line breaks.
+- Removing empty content.
+
+This is useful for Arabic PDF text, which may contain invisible formatting characters after extraction.
+
+---
+
+# Chunking
+
+Hakaa uses:
+
+```text
+RecursiveCharacterTextSplitter
+```
+
+The splitter tries to preserve meaningful Arabic text boundaries.
+
+Current separator priority:
+
+```text
+Paragraph break
+Line break
+Arabic question mark ؟
+Full stop .
+Arabic comma ،
+Space
+Character fallback
+```
+
+Default processing values:
+
+```text
+Chunk Size: 400
+Chunk Overlap: 60
+```
+
+Both values can be changed from the administration dashboard.
+
+The overlap must always be smaller than the chunk size.
+
+---
+
+# Metadata
+
+Hakaa keeps metadata for each processed chunk.
+
+Important fields include:
+
+```text
+file_id
+page_number
+page_chunk_index
+chunk_id
+chunk_order
+project_id
+```
+
+This metadata is important because the final goal is not only to retrieve text, but also to connect each answer back to its historical source.
+
+---
+
+# Embeddings
+
+Hakaa separates the embedding layer from the rest of the application using provider abstractions.
+
+Available provider architecture includes:
+
+```text
+OpenAI-compatible providers
+Cohere
+Nemotron
+```
+
+The current Hakaa setup uses a Nemotron embedding provider.
+
+The configured embedding size is:
+
+```text
+1024 dimensions
+```
+
+---
+
+# Why 1024 Dimensions?
+
+The currently used Nemotron model returns a native embedding vector of:
+
+```text
+2048 dimensions
+```
+
+Hakaa uses PostgreSQL with pgvector and an HNSW index.
+
+For the standard pgvector `vector` type, HNSW supports vectors up to:
+
+```text
+2000 dimensions
+```
+
+Therefore:
+
+```text
+2048 > 2000
+```
+
+so the native 2048-dimensional vector cannot be indexed directly with the current standard HNSW setup.
+
+The current implementation therefore:
+
+```text
+2048D Nemotron Vector
+        ↓
+Take the first 1024 dimensions
+        ↓
+L2 Normalization
+        ↓
+Store vector(1024)
+```
+
+This is currently an application-level solution.
+
+One of the goals of V3 evaluation is to measure the effect of this decision on retrieval quality instead of assuming that it is optimal.
+
+---
+
+# Vector Search
+
+Hakaa uses pgvector as the primary vector database.
+
+The semantic retrieval layer uses:
+
+```text
+Cosine Similarity
++
+HNSW Index
+```
+
+The query embedding is compared against stored chunk embeddings.
+
+Conceptually:
+
+```text
+Question
+    ↓
+Embedding
+    ↓
+pgvector
+    ↓
+Cosine Similarity
+    ↓
+Semantic Results
+```
+
+---
+
+# HNSW
+
+Hakaa creates an HNSW index for vector retrieval.
+
+Conceptually:
+
+```sql
+CREATE INDEX ...
+USING hnsw (vector vector_cosine_ops);
+```
+
+The index is created once the collection reaches the configured threshold.
+
+Current default threshold:
+
+```text
+100 records
+```
+
+For very small collections, exact vector search is sufficient and an approximate index is not immediately required.
+
+---
+
+# Lexical Search
+
+Hakaa V2 adds lexical retrieval using PostgreSQL Full-Text Search.
+
+This search focuses on the exact words and terms appearing in the question.
+
+This is especially useful in historical text for:
+
+- Person names.
+- Place names.
+- Historical terminology.
+- Rare names.
+- Exact expressions.
+
+The lexical layer uses:
+
+```text
+PostgreSQL Full-Text Search
++
+GIN Index
+```
+
+---
+
+# GIN Index
+
+Hakaa creates a PostgreSQL GIN index over the chunk text.
+
+Conceptually:
+
+```sql
+CREATE INDEX ...
+USING GIN (
+    to_tsvector(
+        'simple',
+        text
+    )
+);
+```
+
+The lexical search uses PostgreSQL functions such as:
+
+```text
+to_tsvector
+to_tsquery
+ts_rank_cd
+```
+
+---
+
+# Hybrid Search
+
+Hakaa combines Semantic Search and Lexical Search.
+
+```text
+                 Query
+                   │
+          ┌────────┴────────┐
+          │                 │
+          ▼                 ▼
+   Semantic Search     Lexical Search
+          │                 │
+          └────────┬────────┘
+                   ▼
+                  RRF
+                   │
+                   ▼
+              Final Results
+```
+
+The two retrieval systems solve different problems.
+
+Semantic Search is good at:
+
+```text
+Meaning
+Context
+Similar expressions
+```
+
+Lexical Search is good at:
+
+```text
+Exact words
+Names
+Specific historical terms
+```
+
+Combining both gives Hakaa more than one retrieval signal.
+
+---
+
+# Parallel Search
+
+Hakaa runs Semantic Search and Lexical Search in parallel using:
+
+```python
+asyncio.gather(...)
+```
+
+Instead of:
+
+```text
+Semantic
+    ↓
+wait
+    ↓
+Lexical
+```
+
+the system runs:
+
+```text
+       ┌── Semantic
+Query ─┤
+       └── Lexical
+
+       ↓
+      RRF
+```
+
+This reduces unnecessary retrieval latency.
+
+---
+
+# Reciprocal Rank Fusion — RRF
+
+The results returned by Semantic Search and Lexical Search cannot simply be combined using their raw scores.
+
+For example:
+
+```text
+Semantic Score = cosine similarity
+Lexical Score  = ts_rank_cd
+```
+
+These values come from different scoring systems.
+
+Hakaa therefore uses **Reciprocal Rank Fusion (RRF)**.
+
+RRF combines the **ranking position** of each chunk instead of directly comparing the original scores.
+
+The formula is:
+
+```text
+RRF Score = Σ 1 / (k + rank)
+```
+
+Hakaa currently uses:
+
+```text
+k = 60
+```
+
+---
+
+## Simple RRF Example
+
+Semantic Search:
+
+```text
+1. Chunk A
+2. Chunk B
+3. Chunk C
+```
+
+Lexical Search:
+
+```text
+1. Chunk D
+2. Chunk A
+3. Chunk C
+```
+
+Chunk A appears in both lists.
+
+Its RRF score becomes approximately:
+
+```text
+1 / (60 + 1)
++
+1 / (60 + 2)
+```
+
+So Chunk A receives support from both retrieval systems.
+
+The final ranking therefore rewards chunks that perform well across both Semantic and Lexical retrieval.
+
+A simple way to describe Hakaa's retrieval is:
+
+```text
+Semantic Search → Does the meaning match?
+Lexical Search  → Do the important words match?
+RRF             → How should both rankings be combined?
+```
+
+---
+
+# Candidate Retrieval
+
+Hakaa does not retrieve only the final number of chunks before fusion.
+
+If the user requests:
+
+```text
+limit = 5
+```
+
+the system first retrieves a larger candidate set from each search pipeline.
+
+Current logic:
+
+```text
+candidate_limit = max(limit × 3, 10)
+```
+
+with a maximum of:
+
+```text
+100
+```
+
+For example:
+
+```text
+Requested final results = 5
+
+Semantic candidates = 15
+Lexical candidates  = 15
+
+             ↓
+            RRF
+             ↓
+
+Final results = 5
+```
+
+This gives RRF enough candidates to properly compare the rankings.
+
+---
+
+# Answer Generation
+
+After retrieval:
+
+```text
+Top-K Chunks
+    ↓
+Prompt Builder
+    ↓
+Generation Model
+    ↓
+Final Answer
+```
+
+The Arabic prompt instructs the model to:
+
+- Use the retrieved documents only.
+- Avoid unsupported information.
+- Answer directly.
+- Avoid unnecessary introductions.
+- Answer in the same language as the question.
+- Use clear Arabic when the question is Arabic.
+- Avoid showing internal reasoning.
+- State when the available sources do not contain enough information.
+
+The current generation temperature is configured as:
+
+```text
+0.0
+```
+
+to reduce unnecessary variation in answers.
+
+---
+
+# Sources
+
+Hakaa preserves source metadata during document processing and retrieval.
+
+The backend can associate retrieved chunks with:
+
+```text
+filename
+page number
+chunk ID
+retrieval score
+```
+
+The public interface is designed to show source references alongside answers.
+
+This is important for Hakaa because historical information should remain connected to the original source.
+
+---
+
+# Provider Architecture
+
+Hakaa uses provider/factory abstractions so the application is not tightly coupled to one vendor.
+
+---
+
+## LLM Providers
+
+Conceptually:
+
+```text
+LLMProviderFactory
+│
+├── OpenAI-compatible Provider
+├── Cohere Provider
+└── Nemotron Provider
+```
+
+Generation and embeddings can use different providers.
+
+---
+
+## Vector Database Providers
+
+```text
+VectorDBProviderFactory
+│
+├── PGVectorDBProvider
+└── QdrantDBProvider
+```
+
+The primary production vector backend is:
+
+```text
+PGVECTOR
+```
+
+Qdrant remains available as an alternative backend.
+
+The complete Hybrid Search implementation currently depends on PostgreSQL because the lexical layer is based on PostgreSQL Full-Text Search.
+
+---
+
+# Rate Limit Handling
+
+Free AI APIs may return:
+
+```text
+HTTP 429
+```
+
+Hakaa handles embedding rate limits during indexing with retries and backoff.
+
+The indexing pipeline processes chunks in batches.
+
+Current values:
+
+```text
+Batch Size: 50 chunks
+Batch Delay: 10 seconds
+```
+
+Retry handling is used when a provider returns a temporary rate-limit error.
+
+This is especially important when using free OpenRouter or Cohere limits.
+
+---
+
+# Database
+
+Hakaa uses:
+
+```text
+PostgreSQL
++
+pgvector
+```
+
+Main relational entities:
+
+```text
+Projects
+Assets
+Chunks
+```
+
+Vector collections are created separately per project.
+
+Database operations use:
+
+```text
+SQLAlchemy Async
++
+asyncpg
+```
+
+Database migrations use:
+
+```text
+Alembic
+```
+
+The Docker application entrypoint runs:
+
+```bash
+alembic upgrade head
+```
+
+before starting the FastAPI server.
+
+---
+
+# Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Public UI | HTML, CSS, Vanilla JavaScript |
+| Admin UI | HTML, CSS, Vanilla JavaScript |
+| API | FastAPI |
+| Server | Uvicorn |
+| Database | PostgreSQL |
+| Vector Extension | pgvector |
+| Semantic Index | HNSW |
+| Lexical Search | PostgreSQL Full-Text Search |
+| Lexical Index | GIN |
+| Async | asyncio |
+| ORM | SQLAlchemy Async |
+| PostgreSQL Driver | asyncpg |
+| Migrations | Alembic |
+| PDF Loader | PyMuPDF / LangChain |
+| Text Splitter | RecursiveCharacterTextSplitter |
+| Embeddings | Nemotron / Cohere / compatible providers |
+| Generation | OpenAI-compatible APIs / OpenRouter / Ollama / Cohere |
+| Reverse Proxy | Nginx |
+| HTTPS | Let's Encrypt / Certbot |
+| Metrics | Prometheus |
+| Dashboards | Grafana |
+| Logs | Loki |
+| Host Metrics | Node Exporter |
+| DB Metrics | PostgreSQL Exporter |
+| Containers | Docker Compose |
+| Deployment | Git + GitHub Actions / SSH deployment workflow |
+
+---
+
+# System Architecture
+
+```text
+Browser
+│
+├── Public Chat /
+│
+└── Admin Dashboard /admin/
+          │
+          ▼
+        Nginx
+          │
+          ├── HTTPS
+          ├── Static UI
+          ├── Basic Auth for Admin
+          └── /api/ Reverse Proxy
+                  │
+                  ▼
+                FastAPI
+                  │
+       ┌──────────┼──────────┐
+       │          │          │
+       ▼          ▼          ▼
+   Projects    Processing    NLP
+       │          │          │
+       │          │          ├── Semantic Search
+       │          │          ├── Lexical Search
+       │          │          ├── RRF
+       │          │          └── Answer Generation
+       │          │
+       └──────────┼───────────────┐
+                  │               │
+                  ▼               ▼
+             PostgreSQL       AI Providers
+              + pgvector
+```
+
+---
+
+# Repository Structure
 
 ```text
 mini-rag/
-├── .github/
-│   └── workflows/
-│       └── deploy-main.yml            # production deployment workflow
-├── docker/
-│   ├── docker-compose.yml              # application and monitoring stack
-│   ├── certbot/                        # local certificates and ACME files; ignored
-│   ├── env/                            # runtime environment files
-│   ├── minirag/
-│   │   ├── Dockerfile
-│   │   ├── entrypoint.sh               # runs migrations, then starts Uvicorn
-│   │   └── alembic.ini
-│   ├── nginx/
-│   │   ├── default.conf                # HTTPS, static UI, auth, and API proxy
-│   │   ├── auth/                       # local .htpasswd; ignored
-│   │   └── html/
-│   │       ├── index.html              # public chat interface
-│   │       └── admin/
-│   │           ├── index.html          # administration dashboard
-│   │           ├── admin.css
-│   │           └── admin.js
-│   └── prometheus/
-│       └── prometheus.yml
 ├── src/
-│   ├── main.py                         # FastAPI application and dependency wiring
-│   ├── requirements.txt
+│   ├── main.py
 │   ├── controllers/
 │   │   ├── DataController.py
 │   │   ├── ProjectController.py
-│   │   ├── ProcessController.py        # cleaning and recursive chunking
-│   │   └── NLPController.py            # indexing, retrieval, answers, sources
-│   ├── helpers/
-│   │   └── config.py
+│   │   ├── ProcessController.py
+│   │   └── NLPController.py
 │   ├── models/
 │   │   ├── ProjectModel.py
 │   │   ├── AssetModel.py
-│   │   ├── ChunkModel.py
-│   │   └── db_schemes/minirag/
-│   │       ├── schemes/                # SQLAlchemy models
-│   │       └── alembic/                # database migrations
+│   │   └── ChunkModel.py
 │   ├── routes/
-│   │   ├── base.py                     # health and public projects
-│   │   ├── data.py                     # projects, uploads, and processing
-│   │   ├── nlp.py                      # indexing, search, and answers
-│   │   └── schemes/                    # request models
+│   │   ├── base.py
+│   │   ├── data.py
+│   │   └── nlp.py
 │   ├── stores/
-│   │   ├── LLM/                        # generation and embedding abstractions
-│   │   └── vectordb/                   # pgvector and Qdrant abstractions
-│   ├── utils/
-│   │   └── metrics.py
-│   └── assets/
-│       ├── files/                       # uploads grouped by project ID
-│       └── databases/                   # local Qdrant storage when enabled
+│   │   ├── LLM/
+│   │   │   ├── providers/
+│   │   │   └── templates/
+│   │   └── vectordb/
+│   │       └── providers/
+│   └── utils/
+│       └── metrics.py
+│
+├── docker/
+│   ├── docker-compose.yml
+│   ├── minirag/
+│   ├── nginx/
+│   ├── prometheus/
+│   └── certbot/
+│
 ├── ARCHITECTURE.md
 ├── setup_guide.md
 └── README.md
 ```
 
-Runtime secrets, certificates, password files, uploaded data, and local backups must remain outside Git tracking.
+---
+
+# Docker Services
+
+The Docker Compose stack contains the main application and monitoring services.
+
+| Service | Purpose |
+|---|---|
+| FastAPI | RAG backend |
+| Nginx | Public web server and reverse proxy |
+| PostgreSQL + pgvector | Database and vector storage |
+| Qdrant | Optional vector database |
+| Prometheus | Metrics collection |
+| Grafana | Monitoring dashboards |
+| Loki | Logging infrastructure |
+| Node Exporter | Server metrics |
+| PostgreSQL Exporter | Database metrics |
+
+The services communicate using the Docker internal network.
+
+Only required public services should be exposed externally.
 
 ---
 
-## Quick start with Docker Compose
+# Nginx
 
-### 1. Configure environment files
+Nginx is responsible for:
+
+- Serving the public frontend.
+- Serving the administration frontend.
+- Reverse proxying `/api/` to FastAPI.
+- HTTP → HTTPS redirect.
+- TLS termination.
+- Basic Authentication for admin routes.
+
+Main public ports:
+
+```text
+80
+443
+```
+
+Production domain:
+
+```text
+hakaa.publicvm.com
+```
+
+---
+
+# Monitoring
+
+Hakaa includes a monitoring stack based on:
+
+```text
+Prometheus
+Grafana
+Node Exporter
+PostgreSQL Exporter
+Loki
+```
+
+FastAPI also exposes application metrics.
+
+Examples include:
+
+```text
+HTTP request count
+HTTP request latency
+HTTP response status
+```
+
+This allows the project to monitor the application instead of only checking whether the server is running.
+
+---
+
+# Deployment
+
+Hakaa is designed to run as a Dockerized production application.
+
+Typical deployment flow:
+
+```text
+Code
+ ↓
+Git
+ ↓
+GitHub
+ ↓
+Deployment Workflow
+ ↓
+Server
+ ↓
+Docker Compose
+ ↓
+Hakaa
+```
+
+The project also includes a systemd service wrapper for Docker Compose lifecycle management.
+
+This makes Hakaa different from a notebook-only RAG experiment: the project has an actual application architecture, deployment layer, and monitoring environment.
+
+---
+
+# Quick Start
+
+## Environment Files
+
+Create runtime environment files from the examples.
 
 ```bash
 cd docker/env
 
-cp .env.example.postgres .env.postgres
-cp .env.example.postgres-exporter .env.postgres-exporter
-cp .env.example.grafana .env.grafana
 cp .env.example.app .env.app
+cp .env.example.postgres .env.postgres
+cp .env.example.grafana .env.grafana
+cp .env.example.postgres-exporter .env.postgres-exporter
 ```
 
-Edit the generated files and configure the PostgreSQL credentials, embedding provider, generation provider, model IDs, and API keys.
+Edit the created files with local credentials and provider configuration.
 
-Never commit real environment files or API keys.
+Never commit real secrets.
 
-### 2. Prepare administration authentication
+---
 
-Create an htpasswd file in the ignored runtime directory:
+## Admin Authentication
 
 ```bash
 mkdir -p docker/nginx/auth
@@ -335,48 +1223,39 @@ htpasswd -c docker/nginx/auth/.htpasswd admin
 chmod 644 docker/nginx/auth/.htpasswd
 ```
 
-### 3. Start the stack
+---
+
+## Start the Project
 
 ```bash
 cd docker
+
 docker compose config -q
+
 docker compose up -d --build --remove-orphans
 ```
 
-The FastAPI entrypoint runs:
+---
 
-```bash
-alembic upgrade head
-```
-
-before starting Uvicorn, so committed migrations are applied during deployment.
-
-### 4. Verify the deployment
+## Check Status
 
 ```bash
 docker compose ps
-curl http://localhost/api/v1/
 ```
-
-In the HTTPS production setup:
-
-```bash
-curl https://hakaa.publicvm.com/api/v1/
-```
-
-Main production URLs:
-
-| Interface | URL |
-|---|---|
-| Public chat | `https://hakaa.publicvm.com/` |
-| Administration | `https://hakaa.publicvm.com/admin/` |
-| Health endpoint | `https://hakaa.publicvm.com/api/v1/` |
-
-Prometheus, Grafana, PostgreSQL, Qdrant, Loki, and exporters remain internal to the Docker network unless explicitly proxied or accessed through a secure tunnel.
 
 ---
 
-## API overview
+## View Logs
+
+```bash
+docker compose logs --tail=100 fastapi
+docker compose logs --tail=100 nginx
+docker compose logs --tail=100 pgvector
+```
+
+---
+
+# API Overview
 
 Base path:
 
@@ -384,268 +1263,224 @@ Base path:
 /api/v1
 ```
 
-| Method | Endpoint | Access | Description |
-|---|---|---|---|
-| `GET` | `/` | Public | Application health and version |
-| `GET` | `/projects` | Public | List projects that are public and ready |
-| `GET` | `/data/projects` | Admin | List projects for administration |
-| `POST` | `/data/projects` | Admin | Create a named project with an automatic ID |
-| `POST` | `/data/upload/{project_id}` | Admin | Upload a TXT or PDF source |
-| `POST` | `/data/process/{project_id}` | Admin | Clean and split uploaded source files |
-| `POST` | `/nlp/index/push/{project_id}` | Admin | Generate embeddings and update the vector index |
-| `GET` | `/nlp/index/info/{project_id}` | Admin | Return collection information and record count |
-| `POST` | `/nlp/index/search/{project_id}` | API | Search the project's indexed chunks |
-| `POST` | `/nlp/index/answer/{project_id}` | Public | Retrieve context and generate a grounded answer |
-
-Project-update operations are also used by the administration dashboard to change a project's name, description, visibility, and status. Check the generated OpenAPI documentation for the exact method and path implemented by the current branch:
-
-```text
-/docs
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/` | Health/version |
+| GET | `/projects` | Public ready projects |
+| GET | `/data/projects` | Admin project list |
+| POST | `/data/projects` | Create project |
+| POST | `/data/upload/{project_id}` | Upload source |
+| POST | `/data/process/{project_id}` | Process and chunk source |
+| POST | `/nlp/index/push/{project_id}` | Generate embeddings and index |
+| GET | `/nlp/index/info/{project_id}` | Index information |
+| POST | `/nlp/index/search/{project_id}` | Hybrid retrieval |
+| POST | `/nlp/index/answer/{project_id}` | Retrieve and generate answer |
 
 ---
 
-## End-to-end API example
+# Example Workflow
 
-### 1. Create a project
+## 1. Create Project
 
 ```bash
-curl -X POST "http://localhost/api/v1/data/projects" \
+curl -X POST \
+  "http://localhost/api/v1/data/projects" \
   -H "Content-Type: application/json" \
   -d '{
     "project_name": "Islamic History",
-    "project_description": "Selected historical sources",
+    "project_description": "Historical sources",
     "is_public": false
   }'
 ```
 
-Use the automatically generated `project_id` returned by the API in the following requests.
+---
 
-### 2. Upload a source
+## 2. Upload File
 
 ```bash
-curl -X POST "http://localhost/api/v1/data/upload/<project_id>" \
+curl -X POST \
+  "http://localhost/api/v1/data/upload/<project_id>" \
   -F "file=@/path/to/history.pdf"
 ```
 
-Save the returned `file_id` because the stored filename is generated by Hakaa.
+---
 
-### 3. Process the source
+## 3. Process
 
 ```bash
-curl -X POST "http://localhost/api/v1/data/process/<project_id>" \
+curl -X POST \
+  "http://localhost/api/v1/data/process/<project_id>" \
   -H "Content-Type: application/json" \
   -d '{
-    "file_id": "<returned_file_id>",
+    "file_id": "<file_id>",
     "chunk_size": 400,
     "overlap_size": 60,
     "do_reset": 0
   }'
 ```
 
-### 4. Index the chunks
+---
+
+## 4. Index
 
 ```bash
-curl -X POST "http://localhost/api/v1/nlp/index/push/<project_id>" \
-  -H "Content-Type: application/json" \
-  -d '{"do_reset": 0}'
-```
-
-### 5. Search without generation
-
-```bash
-curl -X POST "http://localhost/api/v1/nlp/index/search/<project_id>" \
+curl -X POST \
+  "http://localhost/api/v1/nlp/index/push/<project_id>" \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "من أسس المدينة؟",
+    "do_reset": 0
+  }'
+```
+
+---
+
+## 5. Search
+
+```bash
+curl -X POST \
+  "http://localhost/api/v1/nlp/index/search/<project_id>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "من بنى بغداد؟",
     "limit": 5
   }'
 ```
 
-### 6. Generate a grounded answer
+---
+
+## 6. Ask Hakaa
 
 ```bash
-curl -X POST "http://localhost/api/v1/nlp/index/answer/<project_id>" \
+curl -X POST \
+  "http://localhost/api/v1/nlp/index/answer/<project_id>" \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "من أسس المدينة ومتى؟",
+    "text": "من بنى بغداد؟",
     "limit": 5
   }'
 ```
 
-Using `do_reset: 1` removes the project's existing chunks or vector collection before rebuilding. Use it only when intentionally replacing the current index. The administration interface currently uses `do_reset: 0` to protect existing data.
+---
+
+# Current Limitations
+
+The current version still has several limitations.
+
+### Historical Dataset
+
+The public system currently contains a limited historical source set.
+
+The goal is to gradually add more Arabic historical sources.
+
+### Scanned PDFs
+
+Image-only scanned PDFs are not yet supported.
+
+This will be addressed in V3 using OCR.
+
+### Retrieval Evaluation
+
+Hybrid Search is implemented, but formal evaluation is still required.
+
+V3 will compare Semantic, Lexical, and Hybrid retrieval using a controlled historical evaluation dataset.
+
+### Free Model Rate Limits
+
+Free API providers can return HTTP `429` during periods of high demand.
+
+Hakaa uses retry/backoff logic for embedding indexing, but external provider availability remains outside the application's control.
+
+### Embedding Dimension Decision
+
+The current 1024-dimensional representation is an implementation decision made to remain compatible with the current HNSW setup.
+
+Its retrieval impact still needs to be evaluated.
 
 ---
 
-## Provider configuration
+# V3 — OCR + Evaluation
 
-### Generation
-
-| Provider | Backend value | Notes |
-|---|---|---|
-| OpenRouter | `OPENAI` | Set the OpenAI-compatible base URL to `https://openrouter.ai/api/v1` |
-| Ollama | `OPENAI` | Use an OpenAI-compatible local endpoint such as `http://host.docker.internal:11434/v1/` |
-| Cohere | `COHERE` | Requires a Cohere API key and generation model |
-
-### Embeddings
-
-| Provider | Backend value | Notes |
-|---|---|---|
-| Cohere | `COHERE` | The multilingual embedding models are suitable for Arabic and English sources |
-| OpenAI-compatible | `OPENAI` | The configured embedding dimension must match the model output |
-
-The production configuration currently uses multilingual embeddings with a vector size of `384`. Changing the embedding model or its dimension requires rebuilding affected vector collections.
-
----
-
-## Vector database options
-
-| Backend | Configuration value | Notes |
-|---|---|---|
-| pgvector | `PGVECTOR` | Primary backend; stored inside PostgreSQL |
-| Qdrant | `QDRANT` | Alternative backend with its own Docker service and storage |
-
-The pgvector provider creates an HNSW index when the collection reaches the configured indexing threshold.
-
----
-
-## Prompt localization
-
-RAG prompt templates are located in:
+The next Hakaa version has two clear goals.
 
 ```text
-src/stores/LLM/templates/locales/
+In V3, Hakaa will move from manual retrieval inspection to a measurable evaluation process. A historical evaluation dataset will be created with questions and known relevant chunks, then Semantic Search, Lexical Search, and Hybrid Search + RRF will be compared using Hit Rate@K, Recall@K, MRR, nDCG@K, and Retrieval Latency.
+
 ```
 
-Supported templates:
+The purpose of V3 is not only to support more historical documents, but also to begin measuring the retrieval system objectively.
 
-- Arabic: `ar`
-- English: `en`
+The main question becomes:
 
-The prompt instructs the generation model to answer using only the retrieved sources and to respond in the language used by the question.
-
----
-
-## Observability
-
-Prometheus collects metrics from:
-
-- FastAPI request middleware.
-- Node Exporter.
-- PostgreSQL Exporter.
-- Prometheus itself.
-- Qdrant when the optional backend is running.
-
-Grafana provides dashboards for application, host, PostgreSQL, and vector-database monitoring. Loki collects service logs.
-
-The services communicate through the internal `backend` Docker network. Only Nginx publishes ports `80` and `443` in the production configuration.
+> Does Hakaa retrieve the correct historical evidence reliably?
 
 ---
 
-## HTTPS and certificate renewal
+# Long-Term Vision
 
-Production HTTPS uses Let's Encrypt certificates mounted into the Nginx container. Certbot renewal is executed by a root cron job twice daily, followed by an Nginx reload.
+Hakaa is currently a Historical RAG system.
 
-Certificate files and ACME runtime data live under `docker/certbot/` and must not be committed.
+The long-term goal is to build a digital Arabic historical source platform.
 
-The Nginx configuration uses Docker's internal DNS resolver so FastAPI can be recreated without requiring an Nginx restart.
+Instead of simply asking an LLM to answer from memory:
 
----
+```text
+Question
+   ↓
+Historical Sources
+   ↓
+Evidence Retrieval
+   ↓
+Source-Aware Answer
+```
 
-## Deployment workflow
+Future collections may allow users to:
 
-Pushes to `main` trigger `.github/workflows/deploy-main.yml`.
+- Search multiple historical books.
+- Find references to the same event in different sources.
+- Compare historical narrations.
+- Connect people, places, dates, and events.
+- Trace every retrieved statement back to its source.
 
-The workflow:
+The role of Hakaa should not be to decide historical truth automatically.
 
-1. Connects to the production server over SSH.
-2. Updates the local `main` branch using a fast-forward-only pull.
-3. Verifies required local certificate and authentication files.
-4. Validates the Docker Compose configuration.
-5. Builds and starts the services.
-6. Validates and reloads Nginx.
-7. Polls the HTTPS health endpoint.
-8. Prints recent Nginx and FastAPI logs if deployment fails.
-
-Deployment concurrency is restricted so that only one `main` deployment runs at a time.
-
----
-
-## Release status
-
-### Hakaa v1.0.0
-
-The first stable release includes:
-
-- Docker-based production deployment.
-- HTTPS and automatic certificate renewal.
-- Public historical chat interface.
-- Protected bilingual administration dashboard.
-- Project creation, naming, visibility, and status management.
-- Automatic project IDs.
-- TXT and PDF ingestion.
-- Dense vector retrieval.
-- Monitoring and deployment automation.
-
-### Hakaa v2 — in development
-
-Completed foundations:
-
-- Improved Arabic text cleaning.
-- Recursive and configurable chunking.
-- Page-aware PDF processing.
-- Metadata preservation through PostgreSQL and pgvector.
-- Source references in the answer API and chat UI.
-
-Planned retrieval work:
-
-- Dense-search baseline evaluation.
-- Arabic lexical retrieval.
-- Hybrid dense and lexical retrieval.
-- Reciprocal Rank Fusion.
-- Reranking.
-- Recall, MRR, nDCG, and latency comparison.
+Its role is to make historical evidence easier to retrieve, inspect, and compare.
 
 ---
 
-## Current limitations
+# Current Project Summary
 
-- TXT files do not currently provide real page numbers.
-- Existing collections must be reprocessed and reindexed to gain the new source metadata.
-- OpenRouter free models may temporarily return HTTP `429` because of shared upstream rate limits.
-- The process success signal still contains legacy vector-database wording even though processing writes chunks to PostgreSQL.
-- Some legacy configuration names contain spelling mistakes and must not be renamed without updating the corresponding settings code and deployment files.
-- The current production retrieval method is dense vector search; hybrid search and reranking are planned for Hakaa v2.
+```text
+Mini-RAG
+   ↓
+FastAPI Architecture
+   ↓
+Projects + Documents
+   ↓
+Arabic Text Processing
+   ↓
+Embeddings
+   ↓
+pgvector + HNSW
+   ↓
+PostgreSQL FTS + GIN
+   ↓
+Hybrid Search
+   ↓
+RRF
+   ↓
+Grounded Answer
+   ↓
+Docker
+   ↓
+Nginx + HTTPS
+   ↓
+Monitoring
+   ↓
+Production Deployment
+   ↓
+V3: OCR + Evaluation
+```
 
----
+Hakaa started as a small RAG learning project.
 
-## Security notes
-
-- Never commit API keys, database passwords, TLS private keys, or `.htpasswd` files.
-- Rotate any credential that has been accidentally exposed.
-- Keep `docker/env/`, `docker/certbot/`, and `docker/nginx/auth/` runtime secrets outside Git.
-- Keep PostgreSQL, pgvector, Qdrant, Grafana, Prometheus, Loki, and exporters inaccessible from the public internet unless a protected access method is configured.
-- The public project API returns only projects marked as public and ready.
-- Administrative pages and ingestion operations are protected by Nginx Basic Authentication.
-
----
-
-## Development roadmap
-
-1. Establish a measurable dense-retrieval baseline.
-2. Add Arabic lexical search.
-3. Combine lexical and dense candidates using hybrid retrieval.
-4. Apply Reciprocal Rank Fusion.
-5. Add an optional reranking stage.
-6. Evaluate relevance and latency against the baseline.
-7. Improve source identity by preserving original filenames and richer document metadata.
-8. Add background jobs and persisted ingestion progress for large books.
-9. Add OCR support for scanned historical documents in a later release.
-
----
-
-## License and attribution
-
-Hakaa is built on the original mini-RAG project structure and extends it with historical-document workflows, project management, user interfaces, deployment, security, observability, and retrieval improvements.
-
-When adding historical books, verify that their licenses or public-domain status permit processing and redistribution.
+It is now a deployed historical RAG system with a clear architecture, retrieval pipeline, administration workflow, monitoring stack, and a roadmap focused on supporting scanned historical sources and evaluating retrieval quality.
