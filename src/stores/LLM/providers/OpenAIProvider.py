@@ -89,6 +89,7 @@ class OpenAIProvider(LLMInterface):
           ):
                completion_options["extra_body"] = {
                     "reasoning": {
+                         "effort": "none",
                          "exclude": True,
                     }
                }
